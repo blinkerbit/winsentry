@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WinSentry - Windows Service & Port Monitor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .status-online { color: #28a745; }
+        .status-offline { color: #dc3545; }
+        .status-stopped { color: #dc3545; }
+        .status-running { color: #28a745; }
+        .status-paused { color: #ffc107; }
+        .card-header { background-color: #f8f9fa; }
+        .table-responsive { max-height: 400px; overflow-y: auto; }
+        .log-entry { font-family: monospace; font-size: 0.9em; }
+        .badge-status { font-size: 0.8em; }
+        .filter-row { background-color: #f8f9fa; }
+        .filter-row th { padding: 8px; border-top: none; }
+        .filter-row input, .filter-row select { border: 1px solid #ced4da; }
+        .filter-row input:focus, .filter-row select:focus { border-color: #80bdff; box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25); }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-shield-alt"></i> WinSentry
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text">
+                    <i class="fas fa-server"></i> Windows Service & Port Monitor
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Tabs -->
+        <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="services-tab" data-bs-toggle="tab" data-bs-target="#services" type="button" role="tab">
+                    <i class="fas fa-cogs"></i> Services
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="ports-tab" data-bs-toggle="tab" data-bs-target="#ports" type="button" role="tab">
+                    <i class="fas fa-network-wired"></i> Port Monitor
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab">
+                    <i class="fas fa-file-alt"></i> Logs
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <a class="nav-link" href="/email-config" target="_blank">
+                    <i class="fas fa-envelope"></i> Email Config
+                </a>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="mainTabsContent">
+            <!-- Services Tab -->
+            <div class="tab-pane fade show active" id="services" role="tabpanel">
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="fas fa-cogs"></i> Windows Services</h5>
+                                <div class="d-flex gap-2">
+                                    <input type="text" id="serviceSearch" class="form-control form-control-sm" 
+                                           placeholder="Search services..." style="width: 200px;" 
+                                           onkeyup="filterServices()">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="openServiceConfig()">
+                                        <i class="fas fa-cog"></i> Settings
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="refreshServices()">
+                                        <i class="fas fa-sync-alt"></i> Refresh
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-striped table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Service Name</th>
+                                                <th>Display Name</th>
+                                                <th>Status</th>
+                                                <th>Start Mode</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                            <tr class="filter-row">
+                                                <th>
+                                                    <input type="text" class="form-control form-control-sm" 
+                                                           id="filterServiceName" placeholder="Filter by name..."
+                                                           onkeyup="applyFilters()">
+                                                </th>
+                                                <th>
+                                                    <input type="text" class="form-control form-control-sm" 
+                                                           id="filterDisplayName" placeholder="Filter by display name..."
+                                                           onkeyup="applyFilters()">
+                                                </th>
+                                                <th>
+                                                    <select class="form-select form-select-sm" id="filterStatus" onchange="applyFilters()">
+                                                        <option value="">All Status</option>
+                                                        <option value="Running">Running</option>
+                                                        <option value="Stopped">Stopped</option>
+                                                        <option value="Paused">Paused</option>
+                                                        <option value="Starting">Starting</option>
+                                                        <option value="Stopping">Stopping</option>
+                                                    </select>
+                                                </th>
+                                                <th>
+                                                    <select class="form-select form-select-sm" id="filterStartMode" onchange="applyFilters()">
+                                                        <option value="">All Modes</option>
+                                                        <option value="Auto">Auto</option>
+                                                        <option value="Manual">Manual</option>
+                                                        <option value="Disabled">Disabled</option>
+                                                    </select>
+                                                </th>
+                                                <th>
+                                                    <button class="btn btn-sm btn-outline-secondary" onclick="clearFilters()" title="Clear all filters">
+                                                        <i class="fas fa-times"></i> Clear
+                                                    </button>
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="servicesTable">
+                                            <tr>
+                                                <td colspan="5" class="text-center">
+                                                    <i class="fas fa-spinner fa-spin"></i> Loading services...
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Port Monitor Tab -->
+            <div class="tab-pane fade" id="ports" role="tabpanel">
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-plus"></i> Add Port Monitor</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="addPortForm">
+                                    <div class="mb-3">
+                                        <label for="portNumber" class="form-label">Port Number</label>
+                                        <input type="number" class="form-control" id="portNumber" required min="1" max="65535">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="checkInterval" class="form-label">Check Interval (seconds)</label>
+                                        <input type="number" class="form-control" id="checkInterval" value="30" min="5" max="3600">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="powershellScript" class="form-label">PowerShell Recovery Script (optional)</label>
+                                        <input type="text" class="form-control" id="powershellScript" placeholder="C:\path\to\script.ps1">
+                                        <div class="form-text">
+                                            <strong>Full path to .ps1 script</strong> that will be executed when port goes offline.<br>
+                                            <small class="text-muted">Example: C:\scripts\restart-service.ps1</small>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-plus"></i> Add Monitor
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="fas fa-network-wired"></i> Monitored Ports</h5>
+                                <button class="btn btn-sm btn-outline-primary" onclick="refreshPorts()">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Port</th>
+                                                <th>Status</th>
+                                                <th>Last Checked</th>
+                                                <th>Interval</th>
+                                                <th>Failures</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="portsTable">
+                                            <tr>
+                                                <td colspan="6" class="text-center">
+                                                    <i class="fas fa-spinner fa-spin"></i> Loading ports...
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div class="tab-pane fade" id="logs" role="tabpanel">
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="fas fa-file-alt"></i> Monitoring Logs</h5>
+                                <div>
+                                    <select class="form-select form-select-sm" id="logPortFilter" onchange="refreshLogs()">
+                                        <option value="">All Ports</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Timestamp</th>
+                                                <th>Port</th>
+                                                <th>Status</th>
+                                                <th>Failure Count</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="logsTable">
+                                            <tr>
+                                                <td colspan="4" class="text-center">
+                                                    <i class="fas fa-spinner fa-spin"></i> Loading logs...
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Service Action Modal -->
+    <div class="modal fade" id="serviceActionModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="serviceActionModalTitle">Service Action</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="serviceActionModalBody">
+                    <!-- Content will be populated by JavaScript -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmServiceAction">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Service Config Modal -->
+    <div class="modal fade" id="serviceConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Service Configuration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="serviceConfigForm">
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="loadAllServices" checked>
+                                <label class="form-check-label" for="loadAllServices">
+                                    <strong>Load All Services</strong>
+                                </label>
+                                <div class="form-text">Load all Windows services (slower but comprehensive)</div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="disableAutoRefresh" checked>
+                                <label class="form-check-label" for="disableAutoRefresh">
+                                    <strong>Disable Auto-Refresh for All Services</strong>
+                                </label>
+                                <div class="form-text">Prevent automatic refresh when loading all services (recommended for performance)</div>
+                            </div>
+                        </div>
+                        
+                        <div id="watchedServicesSection" style="display: none;">
+                            <div class="mb-3">
+                                <label for="watchedServices" class="form-label">Watched Services</label>
+                                <textarea class="form-control" id="watchedServices" rows="4" 
+                                          placeholder="Enter service names, one per line (e.g., Spooler, BITS, Windows Update)"></textarea>
+                                <div class="form-text">Only these services will be loaded when "Load All Services" is disabled</div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="excludedServices" class="form-label">Excluded Services</label>
+                            <textarea class="form-control" id="excludedServices" rows="3" 
+                                      placeholder="Enter service names to exclude, one per line (e.g., WmiPrvSE, DcomLaunch)"></textarea>
+                            <div class="form-text">These services will be excluded from the service list</div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveServiceConfig()">Save Configuration</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Port Config Modal -->
+    <div class="modal fade" id="portConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Configure Port Monitor</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="portConfigForm">
+                        <input type="hidden" id="configPortNumber">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="configCheckInterval" class="form-label">Check Interval (seconds)</label>
+                                    <input type="number" class="form-control" id="configCheckInterval" min="5" max="3600">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="configPowershellScript" class="form-label">PowerShell Recovery Script File</label>
+                                    <input type="text" class="form-control" id="configPowershellScript" placeholder="C:\path\to\script.ps1">
+                                    <div class="form-text">Optional: Path to PowerShell script file to execute on failure</div>
+                                </div>
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="configEnabled">
+                                        <label class="form-check-label" for="configEnabled">
+                                            Enable monitoring
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="configPowershellCommands" class="form-label">PowerShell Commands</label>
+                                    <textarea class="form-control" id="configPowershellCommands" rows="8" placeholder="Write PowerShell commands here...&#10;&#10;Example:&#10;Write-Host 'Starting recovery for port $Port'&#10;Get-Process | Where-Object {$_.ProcessName -eq 'MyApp'} | Stop-Process&#10;Start-Service -Name 'MyService'"></textarea>
+                                    <div class="form-text">Multi-line PowerShell commands to execute on failure (alternative to script file)</div>
+                                </div>
+                                <div class="mb-3">
+                                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="testPowershellCommands()">
+                                        <i class="fas fa-play"></i> Test Commands
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearPowershellOutput()">
+                                        <i class="fas fa-trash"></i> Clear Output
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="mb-3">
+                                    <label class="form-label">PowerShell Output</label>
+                                    <div id="powershellOutput" class="bg-dark text-light p-3 rounded" style="height: 200px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px;">
+                                        <div class="text-muted">PowerShell output will appear here when testing commands...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="savePortConfig()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        let currentServiceName = '';
+        let currentServiceAction = '';
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshServices();
+            refreshPorts();
+            refreshLogs();
+            
+            // Set up form handlers
+            document.getElementById('addPortForm').addEventListener('submit', addPort);
+            document.getElementById('confirmServiceAction').addEventListener('click', executeServiceAction);
+            
+            // Set up service config handlers
+            document.getElementById('loadAllServices').addEventListener('change', toggleWatchedServicesSection);
+        });
+
+        // Service Management Functions
+        let isLoadingServices = false;
+        let allServices = []; // Store all services for filtering
+        let serviceConfig = null; // Store service configuration
+        let autoRefreshEnabled = false; // Control auto-refresh behavior
+        
+        async function refreshServices() {
+            if (isLoadingServices) {
+                console.log('Service loading already in progress, skipping...');
+                return;
+            }
+            
+            isLoadingServices = true;
+            const tbody = document.getElementById('servicesTable');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center">
+                        <i class="fas fa-spinner fa-spin"></i> Loading all services...
+                        <br><small class="text-muted">This may take up to a minute for all services</small>
+                        <br><small class="text-muted">Please wait while we gather comprehensive service information</small>
+                    </td>
+                </tr>
+            `;
+            
+            try {
+                console.log('Loading services...');
+                const response = await fetch('/api/services');
+                const data = await response.json();
+                
+                if (data.success) {
+                    console.log(`Loaded ${data.services.length} services`);
+                    allServices = data.services; // Store all services
+                    displayServices(data.services);
+                    updateServiceCount(data.services.length);
+                } else {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="text-center text-danger">
+                                <i class="fas fa-exclamation-triangle"></i> Failed to load services: ${data.error}
+                            </td>
+                        </tr>
+                    `;
+                    showAlert('Failed to load services: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Service loading error:', error);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center text-danger">
+                            <i class="fas fa-exclamation-triangle"></i> Error loading services: ${error.message}
+                        </td>
+                    </tr>
+                `;
+                showAlert('Error loading services: ' + error.message, 'danger');
+            } finally {
+                isLoadingServices = false;
+            }
+        }
+
+        function updateServiceCount(count) {
+            // Update the header to show service count
+            const header = document.querySelector('#services .card-header h5');
+            if (header) {
+                header.innerHTML = `<i class="fas fa-cogs"></i> Windows Services (${count} total)`;
+            }
+        }
+
+        // Service Configuration Functions
+        async function openServiceConfig() {
+            try {
+                // Load current configuration
+                const response = await fetch('/api/service-config');
+                const data = await response.json();
+                
+                if (data.success) {
+                    serviceConfig = data.config;
+                    
+                    // Populate form
+                    document.getElementById('loadAllServices').checked = serviceConfig.load_all_services;
+                    document.getElementById('disableAutoRefresh').checked = serviceConfig.disable_auto_refresh !== false; // Default to true
+                    document.getElementById('watchedServices').value = serviceConfig.watched_services.join('\n');
+                    document.getElementById('excludedServices').value = serviceConfig.excluded_services.join('\n');
+                    
+                    // Show/hide watched services section
+                    toggleWatchedServicesSection();
+                    
+                    // Show modal
+                    const modal = new bootstrap.Modal(document.getElementById('serviceConfigModal'));
+                    modal.show();
+                } else {
+                    showAlert('Failed to load service configuration: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error loading service configuration: ' + error.message, 'danger');
+            }
+        }
+
+        function toggleWatchedServicesSection() {
+            const loadAllCheckbox = document.getElementById('loadAllServices');
+            const watchedSection = document.getElementById('watchedServicesSection');
+            
+            if (loadAllCheckbox.checked) {
+                watchedSection.style.display = 'none';
+            } else {
+                watchedSection.style.display = 'block';
+            }
+        }
+
+        async function saveServiceConfig() {
+            try {
+                const loadAllServices = document.getElementById('loadAllServices').checked;
+                const disableAutoRefresh = document.getElementById('disableAutoRefresh').checked;
+                const watchedServices = document.getElementById('watchedServices').value
+                    .split('\n')
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0);
+                const excludedServices = document.getElementById('excludedServices').value
+                    .split('\n')
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0);
+                
+                const response = await fetch('/api/service-config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        load_all_services: loadAllServices,
+                        disable_auto_refresh: disableAutoRefresh,
+                        watched_services: watchedServices,
+                        excluded_services: excludedServices
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('Service configuration saved successfully', 'success');
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('serviceConfigModal'));
+                    modal.hide();
+                    
+                    // Only refresh if not loading all services (to avoid auto-refresh)
+                    if (!loadAllServices) {
+                        refreshServices();
+                    } else {
+                        showAlert('Configuration saved. Services will not auto-refresh when loading all services. Use the Refresh button to reload.', 'info');
+                    }
+                } else {
+                    showAlert('Failed to save service configuration: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error saving service configuration: ' + error.message, 'danger');
+            }
+        }
+
+        function filterServices() {
+            const searchTerm = document.getElementById('serviceSearch').value.toLowerCase();
+            if (searchTerm === '') {
+                applyFilters();
+            } else {
+                const filteredServices = allServices.filter(service => 
+                    service.name.toLowerCase().includes(searchTerm) ||
+                    service.display_name.toLowerCase().includes(searchTerm) ||
+                    service.state.toLowerCase().includes(searchTerm)
+                );
+                displayServices(filteredServices);
+                updateServiceCount(filteredServices.length);
+            }
+        }
+
+        function applyFilters() {
+            const serviceNameFilter = document.getElementById('filterServiceName').value.toLowerCase();
+            const displayNameFilter = document.getElementById('filterDisplayName').value.toLowerCase();
+            const statusFilter = document.getElementById('filterStatus').value;
+            const startModeFilter = document.getElementById('filterStartMode').value;
+            
+            const filteredServices = allServices.filter(service => {
+                const matchesServiceName = !serviceNameFilter || service.name.toLowerCase().includes(serviceNameFilter);
+                const matchesDisplayName = !displayNameFilter || service.display_name.toLowerCase().includes(displayNameFilter);
+                const matchesStatus = !statusFilter || service.state === statusFilter;
+                const matchesStartMode = !startModeFilter || service.start_mode === startModeFilter;
+                
+                return matchesServiceName && matchesDisplayName && matchesStatus && matchesStartMode;
+            });
+            
+            displayServices(filteredServices);
+            updateServiceCount(filteredServices.length);
+        }
+
+        function clearFilters() {
+            document.getElementById('filterServiceName').value = '';
+            document.getElementById('filterDisplayName').value = '';
+            document.getElementById('filterStatus').value = '';
+            document.getElementById('filterStartMode').value = '';
+            document.getElementById('serviceSearch').value = '';
+            
+            displayServices(allServices);
+            updateServiceCount(allServices.length);
+        }
+
+        function displayServices(services) {
+            const tbody = document.getElementById('servicesTable');
+            tbody.innerHTML = '';
+            
+            if (services.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">
+                            <i class="fas fa-search"></i> No services found matching your search
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            services.forEach(service => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><code>${service.name}</code></td>
+                    <td>${service.display_name}</td>
+                    <td><span class="badge badge-status status-${service.state.toLowerCase()}">${service.state}</span></td>
+                    <td>${service.start_mode}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            ${service.state === 'Running' ? 
+                                `<button class="btn btn-warning btn-sm" onclick="showServiceAction('${service.name}', 'stop')">
+                                    <i class="fas fa-stop"></i> Stop
+                                </button>` : 
+                                `<button class="btn btn-success btn-sm" onclick="showServiceAction('${service.name}', 'start')">
+                                    <i class="fas fa-play"></i> Start
+                                </button>`
+                            }
+                            <button class="btn btn-info btn-sm" onclick="showServiceAction('${service.name}', 'restart')">
+                                <i class="fas fa-redo"></i> Restart
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function showServiceAction(serviceName, action) {
+            currentServiceName = serviceName;
+            currentServiceAction = action;
+            
+            const modal = new bootstrap.Modal(document.getElementById('serviceActionModal'));
+            document.getElementById('serviceActionModalTitle').textContent = `${action.charAt(0).toUpperCase() + action.slice(1)} Service`;
+            document.getElementById('serviceActionModalBody').innerHTML = `
+                <p>Are you sure you want to <strong>${action}</strong> the service <code>${serviceName}</code>?</p>
+            `;
+            modal.show();
+        }
+
+        async function executeServiceAction() {
+            try {
+                const response = await fetch(`/api/services/${currentServiceName}/${currentServiceAction}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    refreshServices();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error executing service action: ' + error.message, 'danger');
+            }
+            
+            bootstrap.Modal.getInstance(document.getElementById('serviceActionModal')).hide();
+        }
+
+        // Port Monitoring Functions
+        async function refreshPorts() {
+            try {
+                const response = await fetch('/api/ports');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayPorts(data.ports);
+                    updateLogPortFilter(data.ports);
+                } else {
+                    showAlert('Failed to load ports: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error loading ports: ' + error.message, 'danger');
+            }
+        }
+
+        function displayPorts(ports) {
+            const tbody = document.getElementById('portsTable');
+            tbody.innerHTML = '';
+            
+            if (ports.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No ports being monitored</td></tr>';
+                return;
+            }
+            
+            ports.forEach(port => {
+                const row = document.createElement('tr');
+                const statusClass = port.is_online ? 'status-online' : 'status-offline';
+                const statusText = port.is_online ? 'ONLINE' : 'OFFLINE';
+                
+                // Format last checked timestamp
+                let lastCheckedDisplay = 'Never';
+                if (port.last_check_display) {
+                    lastCheckedDisplay = port.last_check_display;
+                } else if (port.last_check) {
+                    // Fallback to ISO timestamp if display format not available
+                    const date = new Date(port.last_check);
+                    lastCheckedDisplay = date.toLocaleString();
+                }
+                
+                // Create tooltip title for detailed timestamp
+                let tooltipTitle = 'Never checked';
+                if (port.last_check) {
+                    const date = new Date(port.last_check);
+                    tooltipTitle = `Last checked: ${date.toLocaleString()}`;
+                }
+                
+                row.innerHTML = `
+                    <td><strong>${port.port}</strong></td>
+                    <td><span class="${statusClass}">${statusText}</span></td>
+                    <td>
+                        <small class="text-muted" title="${tooltipTitle}">
+                            <i class="fas fa-clock"></i> ${lastCheckedDisplay}
+                        </small>
+                    </td>
+                    <td>${port.interval}s</td>
+                    <td><span class="badge bg-warning">${port.failure_count}</span></td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary btn-sm" onclick="configurePort(${port.port})">
+                                <i class="fas fa-cog"></i> Config
+                            </button>
+                            <button class="btn btn-outline-warning btn-sm" onclick="killPortProcess(${port.port})" title="Kill process using this port">
+                                <i class="fas fa-stop"></i> Kill
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="forceKillPort(${port.port})" title="Force kill all processes on this port">
+                                <i class="fas fa-skull"></i> Force Kill
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="removePort(${port.port})">
+                                <i class="fas fa-trash"></i> Remove
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function addPort(event) {
+            event.preventDefault();
+            
+            const port = document.getElementById('portNumber').value;
+            const interval = document.getElementById('checkInterval').value;
+            const script = document.getElementById('powershellScript').value;
+            
+            // Client-side validation
+            if (!port || port < 1 || port > 65535) {
+                showAlert('Port number must be between 1 and 65535', 'danger');
+                return;
+            }
+            
+            if (!interval || interval < 5 || interval > 3600) {
+                showAlert('Check interval must be between 5 and 3600 seconds', 'danger');
+                return;
+            }
+            
+            if (script && !script.toLowerCase().endsWith('.ps1')) {
+                showAlert('PowerShell script must have .ps1 extension', 'danger');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/ports', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        port: parseInt(port),
+                        interval: parseInt(interval),
+                        powershell_script: script.trim() || null
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    document.getElementById('addPortForm').reset();
+                    refreshPorts();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error adding port: ' + error.message, 'danger');
+            }
+        }
+
+        async function removePort(port) {
+            if (!confirm(`Remove port ${port} from monitoring?`)) return;
+            
+            try {
+                const response = await fetch('/api/ports', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ port: port })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    refreshPorts();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error removing port: ' + error.message, 'danger');
+            }
+        }
+
+        async function configurePort(port) {
+            try {
+                // Get current port configuration
+                const response = await fetch(`/api/ports/config?port=${port}`);
+                const data = await response.json();
+                
+                if (data.success && data.config) {
+                    const config = data.config;
+                    
+                    // Populate the modal with current configuration
+                    document.getElementById('configPortNumber').value = port;
+                    document.getElementById('configCheckInterval').value = config.interval || 30;
+                    document.getElementById('configPowershellScript').value = config.powershell_script || '';
+                    document.getElementById('configPowershellCommands').value = config.powershell_commands || '';
+                    document.getElementById('configEnabled').checked = config.enabled !== false;
+                    
+                    // Clear the output area
+                    clearPowershellOutput();
+                    
+                    // Show the modal
+                    const modal = new bootstrap.Modal(document.getElementById('portConfigModal'));
+                    modal.show();
+                } else {
+                    showAlert('Failed to load port configuration: ' + (data.error || 'Unknown error'), 'danger');
+                }
+            } catch (error) {
+                showAlert('Error loading port configuration: ' + error.message, 'danger');
+            }
+        }
+
+        async function killPortProcess(port) {
+            if (!confirm(`Kill process using port ${port}? This will terminate the application using this port.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/ports/kill', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ port: port })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    refreshPorts();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error killing process: ' + error.message, 'danger');
+            }
+        }
+
+        async function forceKillPort(port) {
+            if (!confirm(`FORCE KILL all processes on port ${port}? This will forcefully terminate ALL processes using this port. This action cannot be undone!`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/ports/force-kill', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ port: port })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    refreshPorts();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error force killing port: ' + error.message, 'danger');
+            }
+        }
+
+        // Logs Functions
+        async function refreshLogs() {
+            const portFilter = document.getElementById('logPortFilter').value;
+            const url = portFilter ? `/api/logs?port=${portFilter}` : '/api/logs';
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayLogs(data.logs);
+                } else {
+                    showAlert('Failed to load logs: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error loading logs: ' + error.message, 'danger');
+            }
+        }
+
+        function displayLogs(logs) {
+            const tbody = document.getElementById('logsTable');
+            tbody.innerHTML = '';
+            
+            if (logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No logs available</td></tr>';
+                return;
+            }
+            
+            logs.forEach(log => {
+                const row = document.createElement('tr');
+                const statusClass = log.status === 'ONLINE' ? 'status-online' : 'status-offline';
+                
+                row.innerHTML = `
+                    <td class="log-entry">${new Date(log.timestamp).toLocaleString()}</td>
+                    <td><strong>${log.port}</strong></td>
+                    <td><span class="${statusClass}">${log.status}</span></td>
+                    <td><span class="badge bg-warning">${log.failure_count}</span></td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateLogPortFilter(ports) {
+            const select = document.getElementById('logPortFilter');
+            const currentValue = select.value;
+            
+            select.innerHTML = '<option value="">All Ports</option>';
+            ports.forEach(port => {
+                const option = document.createElement('option');
+                option.value = port.port;
+                option.textContent = `Port ${port.port}`;
+                select.appendChild(option);
+            });
+            
+            select.value = currentValue;
+        }
+
+        // Utility Functions
+        function showAlert(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            const container = document.querySelector('.container');
+            container.insertBefore(alertDiv, container.firstChild);
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+
+        // Port Configuration Functions
+        async function savePortConfig() {
+            const port = document.getElementById('configPortNumber').value;
+            const interval = document.getElementById('configCheckInterval').value;
+            const powershellScript = document.getElementById('configPowershellScript').value;
+            const powershellCommands = document.getElementById('configPowershellCommands').value;
+            const enabled = document.getElementById('configEnabled').checked;
+            
+            if (!port || !interval) {
+                showAlert('Port and interval are required', 'danger');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/ports/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        port: parseInt(port),
+                        interval: parseInt(interval),
+                        powershell_script: powershellScript.trim() || null,
+                        powershell_commands: powershellCommands.trim() || null,
+                        enabled: enabled
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('Port configuration saved successfully', 'success');
+                    // Close the modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('portConfigModal'));
+                    modal.hide();
+                    refreshPorts();
+                } else {
+                    showAlert('Failed to save port configuration: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error saving port configuration: ' + error.message, 'danger');
+            }
+        }
+
+        // PowerShell Command Testing Functions
+        async function testPowershellCommands() {
+            const commands = document.getElementById('configPowershellCommands').value.trim();
+            const port = document.getElementById('configPortNumber').value;
+            
+            if (!commands) {
+                showAlert('Please enter PowerShell commands to test', 'warning');
+                return;
+            }
+            
+            const outputDiv = document.getElementById('powershellOutput');
+            outputDiv.innerHTML = '<div class="text-info">Executing PowerShell commands...</div>';
+            
+            try {
+                console.log('Executing PowerShell commands:', commands);
+                const response = await fetch('/api/powershell/execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        commands: commands,
+                        port: port || 9999 // Use configured port or default
+                    })
+                });
+                
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                if (data.success) {
+                    outputDiv.innerHTML = `
+                        <div class="text-success">✓ Commands executed successfully</div>
+                        <div class="text-light">Exit Code: ${data.exit_code || 'N/A'}</div>
+                        <div class="text-light">Execution Time: ${data.execution_time || 'N/A'}ms</div>
+                        <hr class="my-2">
+                        <div class="text-warning"><strong>STDOUT:</strong></div>
+                        <div class="text-light">${data.stdout || '(no output)'}</div>
+                        <hr class="my-2">
+                        <div class="text-danger"><strong>STDERR:</strong></div>
+                        <div class="text-light">${data.stderr || '(no errors)'}</div>
+                    `;
+                } else {
+                    outputDiv.innerHTML = `
+                        <div class="text-danger">✗ Command execution failed</div>
+                        <div class="text-light">Error: ${data.error || 'Unknown error'}</div>
+                        <hr class="my-2">
+                        <div class="text-warning"><strong>STDOUT:</strong></div>
+                        <div class="text-light">${data.stdout || '(no output)'}</div>
+                        <hr class="my-2">
+                        <div class="text-danger"><strong>STDERR:</strong></div>
+                        <div class="text-light">${data.stderr || '(no errors)'}</div>
+                    `;
+                }
+            } catch (error) {
+                console.error('PowerShell execution error:', error);
+                outputDiv.innerHTML = `
+                    <div class="text-danger">✗ Failed to execute commands</div>
+                    <div class="text-light">Error: ${error.message}</div>
+                    <div class="text-light">Check browser console for details</div>
+                `;
+            }
+        }
+        
+        function clearPowershellOutput() {
+            document.getElementById('powershellOutput').innerHTML = '<div class="text-muted">PowerShell output will appear here when testing commands...</div>';
+        }
+
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            if (document.getElementById('services-tab').classList.contains('active')) {
+                refreshServices();
+            } else if (document.getElementById('ports-tab').classList.contains('active')) {
+                refreshPorts();
+            } else if (document.getElementById('logs-tab').classList.contains('active')) {
+                refreshLogs();
+            }
+        }, 30000);
+    </script>
+</body>
+</html>

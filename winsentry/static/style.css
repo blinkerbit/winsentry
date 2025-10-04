@@ -1,0 +1,137 @@
+/* Custom styles for WinSentry */
+
+.status-online { 
+    color: #28a745; 
+    font-weight: bold;
+}
+
+.status-offline { 
+    color: #dc3545; 
+    font-weight: bold;
+}
+
+.status-stopped { 
+    color: #dc3545; 
+    font-weight: bold;
+}
+
+.status-running { 
+    color: #28a745; 
+    font-weight: bold;
+}
+
+.status-paused { 
+    color: #ffc107; 
+    font-weight: bold;
+}
+
+.badge-status {
+    font-size: 0.8em;
+    padding: 0.25em 0.5em;
+}
+
+.log-entry {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+.table-responsive {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+.btn-group-sm .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.alert {
+    margin-bottom: 1rem;
+}
+
+/* Loading spinner */
+.fa-spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Status indicators */
+.status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.status-indicator.online {
+    background-color: #28a745;
+}
+
+.status-indicator.offline {
+    background-color: #dc3545;
+}
+
+/* Timestamp styling */
+.text-muted {
+    font-size: 0.85em;
+}
+
+.fa-clock {
+    margin-right: 3px;
+    opacity: 0.7;
+}
+
+/* Button styling for kill actions */
+.btn-outline-warning {
+    color: #ffc107;
+    border-color: #ffc107;
+}
+
+.btn-outline-warning:hover {
+    color: #000;
+    background-color: #ffc107;
+    border-color: #ffc107;
+}
+
+.btn-outline-danger {
+    color: #dc3545;
+    border-color: #dc3545;
+}
+
+.btn-outline-danger:hover {
+    color: #fff;
+    background-color: #dc3545;
+    border-color: #dc3545;
+}
+
+/* Force kill button special styling */
+.btn-outline-danger[title*="Force kill"] {
+    border-width: 2px;
+    font-weight: bold;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .btn-group-sm {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .btn-group-sm .btn {
+        margin-bottom: 2px;
+    }
+}
