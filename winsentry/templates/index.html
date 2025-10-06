@@ -50,6 +50,16 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
+                <button class="nav-link" id="service-monitor-tab" data-bs-toggle="tab" data-bs-target="#service-monitor" type="button" role="tab">
+                    <i class="fas fa-desktop"></i> Service Monitor
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="resource-monitor-tab" data-bs-toggle="tab" data-bs-target="#resource-monitor" type="button" role="tab">
+                    <i class="fas fa-chart-line"></i> Resource Monitor
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab">
                     <i class="fas fa-file-alt"></i> Logs
                 </button>
@@ -212,6 +222,399 @@
                 </div>
             </div>
 
+            <!-- Service Monitor Tab -->
+            <div class="tab-pane fade" id="service-monitor" role="tabpanel">
+                <!-- Service Monitoring Overview -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="fas fa-tachometer-alt"></i> Service Monitoring Overview</h5>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-success" onclick="startAllServiceMonitors()">
+                                        <i class="fas fa-play"></i> Start All
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-warning" onclick="stopAllServiceMonitors()">
+                                        <i class="fas fa-stop"></i> Stop All
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="refreshServiceMonitors()">
+                                        <i class="fas fa-sync-alt"></i> Refresh
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="row" id="serviceMonitoringStats">
+                                    <div class="col-md-3">
+                                        <div class="card bg-primary text-white">
+                                            <div class="card-body text-center">
+                                                <h4 id="totalServicesCount">0</h4>
+                                                <p class="mb-0">Total Services</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-success text-white">
+                                            <div class="card-body text-center">
+                                                <h4 id="runningServicesCount">0</h4>
+                                                <p class="mb-0">Running</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-danger text-white">
+                                            <div class="card-body text-center">
+                                                <h4 id="stoppedServicesCount">0</h4>
+                                                <p class="mb-0">Stopped</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-warning text-white">
+                                            <div class="card-body text-center">
+                                                <h4 id="failedServicesCount">0</h4>
+                                                <p class="mb-0">Failed</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add New Service Monitor -->
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-plus"></i> Add Service Monitor</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="addServiceMonitorForm">
+                                    <div class="mb-3">
+                                        <label for="serviceMonitorName" class="form-label">Service Name</label>
+                                        <input type="text" class="form-control" id="serviceMonitorName" required 
+                                               placeholder="e.g., wuauserv, Spooler, BITS">
+                                        <div class="form-text">Enter the Windows service name to monitor</div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="serviceMonitorInterval" class="form-label">Check Interval (seconds)</label>
+                                        <input type="number" class="form-control" id="serviceMonitorInterval" value="30" min="5" max="3600">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="serviceMonitorScript" class="form-label">PowerShell Recovery Script (optional)</label>
+                                        <input type="text" class="form-control" id="serviceMonitorScript" placeholder="C:\path\to\script.ps1">
+                                        <div class="form-text">
+                                            <strong>Full path to .ps1 script</strong> that will be executed when service stops.<br>
+                                            <small class="text-muted">Example: C:\scripts\restart-service.ps1</small>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="serviceMonitorEnabled" checked>
+                                            <label class="form-check-label" for="serviceMonitorEnabled">
+                                                Enable monitoring immediately
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-plus"></i> Add Monitor
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-cogs"></i> Bulk Operations</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-outline-primary" onclick="bulkConfigureServices()">
+                                        <i class="fas fa-cog"></i> Bulk Configure Services
+                                    </button>
+                                    <button class="btn btn-outline-info" onclick="exportServiceConfig()">
+                                        <i class="fas fa-download"></i> Export Configuration
+                                    </button>
+                                    <button class="btn btn-outline-secondary" onclick="importServiceConfig()">
+                                        <i class="fas fa-upload"></i> Import Configuration
+                                    </button>
+                                    <button class="btn btn-outline-warning" onclick="testAllServices()">
+                                        <i class="fas fa-vial"></i> Test All Services
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Monitored Services Management -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="fas fa-desktop"></i> Monitored Services</h5>
+                                <div class="d-flex gap-2">
+                                    <select class="form-select form-select-sm" id="serviceStatusFilter" onchange="filterServiceMonitors()">
+                                        <option value="">All Status</option>
+                                        <option value="Running">Running</option>
+                                        <option value="Stopped">Stopped</option>
+                                        <option value="Failed">Failed</option>
+                                    </select>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="refreshServiceMonitors()">
+                                        <i class="fas fa-sync-alt"></i> Refresh
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Service</th>
+                                                <th>Status</th>
+                                                <th>Last Checked</th>
+                                                <th>Interval</th>
+                                                <th>Failures</th>
+                                                <th>Recovery Script</th>
+                                                <th>Enabled</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="serviceMonitorsTable">
+                                            <tr>
+                                                <td colspan="8" class="text-center">
+                                                    <i class="fas fa-spinner fa-spin"></i> Loading service monitors...
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Resource Monitor Tab -->
+            <div class="tab-pane fade" id="resource-monitor" role="tabpanel">
+                <!-- Resource Monitoring Overview -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="fas fa-chart-line"></i> Resource Monitoring Overview</h5>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-success" onclick="checkAllThresholds()">
+                                        <i class="fas fa-search"></i> Check All Thresholds
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-warning" onclick="testAllAlerts()">
+                                        <i class="fas fa-bell"></i> Test All Alerts
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="refreshResourceMonitoring()">
+                                        <i class="fas fa-sync-alt"></i> Refresh
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="row" id="resourceMonitoringStats">
+                                    <div class="col-md-3">
+                                        <div class="card bg-primary text-white">
+                                            <div class="card-body text-center">
+                                                <h4 id="totalThresholdsCount">0</h4>
+                                                <p class="mb-0">Total Thresholds</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-success text-white">
+                                            <div class="card-body text-center">
+                                                <h4 id="normalThresholdsCount">0</h4>
+                                                <p class="mb-0">Normal</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-warning text-white">
+                                            <div class="card-body text-center">
+                                                <h4 id="warningThresholdsCount">0</h4>
+                                                <p class="mb-0">Warning</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-danger text-white">
+                                            <div class="card-body text-center">
+                                                <h4 id="criticalThresholdsCount">0</h4>
+                                                <p class="mb-0">Critical</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Threshold Status Dashboard -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Threshold Status Dashboard</h5>
+                                <div class="d-flex gap-2">
+                                    <select class="form-select form-select-sm" id="thresholdStatusFilter" onchange="filterThresholds()">
+                                        <option value="">All Status</option>
+                                        <option value="normal">Normal</option>
+                                        <option value="warning">Warning</option>
+                                        <option value="critical">Critical</option>
+                                    </select>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="refreshResourceMonitoring()">
+                                        <i class="fas fa-sync-alt"></i> Refresh
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Service Name</th>
+                                                <th>CPU Threshold</th>
+                                                <th>RAM Threshold</th>
+                                                <th>Current CPU</th>
+                                                <th>Current RAM</th>
+                                                <th>Status</th>
+                                                <th>Email Alerts</th>
+                                                <th>Last Checked</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="resourceMonitoringTable">
+                                            <tr>
+                                                <td colspan="9" class="text-center">
+                                                    <i class="fas fa-spinner fa-spin"></i> Loading resource monitoring configurations...
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configure New Resource Monitoring -->
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-cog"></i> Configure Resource Monitoring</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="resourceMonitorForm">
+                                    <div class="mb-3">
+                                        <label for="resourceServiceName" class="form-label">Service Name</label>
+                                        <input type="text" class="form-control" id="resourceServiceName" required 
+                                               placeholder="e.g., wuauserv, Spooler, BITS">
+                                        <div class="form-text">Enter the Windows service name to monitor resources for</div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="cpuThreshold" class="form-label">CPU Threshold (%)</label>
+                                        <input type="number" class="form-control" id="cpuThreshold" min="0" max="100" step="0.1" 
+                                               placeholder="e.g., 80.0">
+                                        <div class="form-text">Alert when CPU usage exceeds this percentage</div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="ramThreshold" class="form-label">RAM Threshold (%)</label>
+                                        <input type="number" class="form-control" id="ramThreshold" min="0" max="100" step="0.1" 
+                                               placeholder="e.g., 15.0">
+                                        <div class="form-text">Alert when RAM usage exceeds this percentage</div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="enableEmailAlerts">
+                                            <label class="form-check-label" for="enableEmailAlerts">
+                                                Enable Email Alerts
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="fas fa-save"></i> Save Thresholds
+                                        </button>
+                                        <button type="button" class="btn btn-outline-info" onclick="checkServiceResources()">
+                                            <i class="fas fa-search"></i> Check Now
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="getServiceResourceSummary()">
+                                            <i class="fas fa-chart-bar"></i> Summary
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="fas fa-chart-line"></i> Resource Summary</h5>
+                                <button class="btn btn-sm btn-outline-primary" onclick="refreshResourceSummary()">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div id="resourceSummaryContent">
+                                    <div class="text-center text-muted">
+                                        <i class="fas fa-info-circle"></i> Select a service and click "Summary" to view resource usage
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Service Processes Table -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="fas fa-tasks"></i> Service Processes</h5>
+                                <button class="btn btn-sm btn-outline-primary" onclick="refreshServiceProcesses()">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>PID</th>
+                                                <th>Process Name</th>
+                                                <th>CPU %</th>
+                                                <th>RAM %</th>
+                                                <th>Memory (MB)</th>
+                                                <th>Username</th>
+                                                <th>Command Line</th>
+                                                <th>Status</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="serviceProcessesTable">
+                                            <tr>
+                                                <td colspan="9" class="text-center text-muted">
+                                                    <i class="fas fa-info-circle"></i> Select a service to view its processes
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Logs Tab -->
             <div class="tab-pane fade" id="logs" role="tabpanel">
                 <div class="row mt-3">
@@ -327,6 +730,26 @@
         </div>
     </div>
 
+    <!-- Process Details Modal -->
+    <div class="modal fade" id="processDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Process Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="processDetailsContent">
+                        <!-- Process details will be populated by JavaScript -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Port Config Modal -->
     <div class="modal fade" id="portConfigModal" tabindex="-1">
         <div class="modal-dialog modal-xl">
@@ -404,10 +827,14 @@
         document.addEventListener('DOMContentLoaded', function() {
             refreshServices();
             refreshPorts();
+            refreshServiceMonitors();
+            refreshResourceMonitoring();
             refreshLogs();
             
             // Set up form handlers
             document.getElementById('addPortForm').addEventListener('submit', addPort);
+            document.getElementById('addServiceMonitorForm').addEventListener('submit', addServiceMonitor);
+            document.getElementById('resourceMonitorForm').addEventListener('submit', saveResourceThresholds);
             document.getElementById('confirmServiceAction').addEventListener('click', executeServiceAction);
             
             // Set up service config handlers
@@ -1117,12 +1544,961 @@
             document.getElementById('powershellOutput').innerHTML = '<div class="text-muted">PowerShell output will appear here when testing commands...</div>';
         }
 
+        // Service Monitor Functions
+        async function addServiceMonitor(event) {
+            event.preventDefault();
+            
+            const serviceName = document.getElementById('serviceMonitorName').value.trim();
+            const interval = document.getElementById('serviceMonitorInterval').value;
+            const script = document.getElementById('serviceMonitorScript').value.trim();
+            
+            if (!serviceName) {
+                showAlert('Service name is required', 'danger');
+                return;
+            }
+            
+            if (!interval || interval < 5 || interval > 3600) {
+                showAlert('Check interval must be between 5 and 3600 seconds', 'danger');
+                return;
+            }
+            
+            if (script && !script.toLowerCase().endsWith('.ps1')) {
+                showAlert('PowerShell script must have .ps1 extension', 'danger');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/service-monitor/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        service_name: serviceName,
+                        interval: parseInt(interval),
+                        powershell_script: script || null
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    document.getElementById('addServiceMonitorForm').reset();
+                    refreshServiceMonitors();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error adding service monitor: ' + error.message, 'danger');
+            }
+        }
+
+        async function refreshServiceMonitors() {
+            try {
+                const response = await fetch('/api/service-monitor');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayServiceMonitors(data.services);
+                } else {
+                    showAlert('Failed to load service monitors: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error loading service monitors: ' + error.message, 'danger');
+            }
+        }
+
+        function displayServiceMonitors(services) {
+            const tbody = document.getElementById('serviceMonitorsTable');
+            tbody.innerHTML = '';
+            
+            if (services.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No services being monitored</td></tr>';
+                return;
+            }
+            
+            // Update statistics
+            updateServiceMonitoringStats(services);
+            
+            services.forEach(service => {
+                const row = document.createElement('tr');
+                const statusClass = service.status === 'Running' ? 'status-running' : 'status-stopped';
+                const enabledStatus = service.enabled !== false ? 
+                    '<span class="badge bg-success">Enabled</span>' : 
+                    '<span class="badge bg-secondary">Disabled</span>';
+                
+                const recoveryScript = service.powershell_script ? 
+                    `<small class="text-muted">${service.powershell_script}</small>` : 
+                    '<small class="text-muted">None</small>';
+                
+                row.innerHTML = `
+                    <td><strong>${service.service_name}</strong></td>
+                    <td><span class="${statusClass}">${service.status}</span></td>
+                    <td>
+                        <small class="text-muted">
+                            <i class="fas fa-clock"></i> ${service.last_check_display || 'Never'}
+                        </small>
+                    </td>
+                    <td>${service.interval}s</td>
+                    <td><span class="badge bg-warning">${service.failure_count}</span></td>
+                    <td>${recoveryScript}</td>
+                    <td>${enabledStatus}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary btn-sm" onclick="editServiceMonitor('${service.service_name}')" title="Edit configuration">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-outline-info btn-sm" onclick="testServiceMonitor('${service.service_name}')" title="Test service">
+                                <i class="fas fa-vial"></i>
+                            </button>
+                            <button class="btn btn-outline-warning btn-sm" onclick="toggleServiceMonitor('${service.service_name}', ${service.enabled !== false})" title="Toggle monitoring">
+                                <i class="fas fa-${service.enabled !== false ? 'pause' : 'play'}"></i>
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="removeServiceMonitor('${service.service_name}')" title="Remove monitoring">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateServiceMonitoringStats(services) {
+            const total = services.length;
+            const running = services.filter(s => s.status === 'Running').length;
+            const stopped = services.filter(s => s.status === 'Stopped').length;
+            const failed = services.filter(s => s.status === 'Failed' || s.failure_count > 0).length;
+            
+            document.getElementById('totalServicesCount').textContent = total;
+            document.getElementById('runningServicesCount').textContent = running;
+            document.getElementById('stoppedServicesCount').textContent = stopped;
+            document.getElementById('failedServicesCount').textContent = failed;
+        }
+
+        // Enhanced Service Monitoring Management Functions
+        async function editServiceMonitor(serviceName) {
+            try {
+                // Load current service configuration
+                const response = await fetch(`/api/service-monitor/config?service_name=${encodeURIComponent(serviceName)}`);
+                const data = await response.json();
+                
+                if (data.success && data.config) {
+                    const config = data.config;
+                    
+                    // Populate the form
+                    document.getElementById('serviceMonitorName').value = serviceName;
+                    document.getElementById('serviceMonitorInterval').value = config.interval || 30;
+                    document.getElementById('serviceMonitorScript').value = config.powershell_script || '';
+                    document.getElementById('serviceMonitorEnabled').checked = config.enabled !== false;
+                    
+                    showAlert(`Loaded configuration for ${serviceName}. Modify and save to update.`, 'info');
+                } else {
+                    showAlert(`No configuration found for ${serviceName}`, 'warning');
+                }
+            } catch (error) {
+                showAlert('Error loading service configuration: ' + error.message, 'danger');
+            }
+        }
+
+        async function testServiceMonitor(serviceName) {
+            try {
+                const response = await fetch(`/api/service-monitor/threshold-check?service_name=${encodeURIComponent(serviceName)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const result = data.result;
+                    if (result.exceeded) {
+                        showAlert(`⚠️ Thresholds exceeded for ${serviceName}! ${result.alerts.length} alerts generated.`, 'warning');
+                    } else {
+                        showAlert(`✅ Service ${serviceName} is running normally`, 'success');
+                    }
+                } else {
+                    showAlert('Failed to test service: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error testing service: ' + error.message, 'danger');
+            }
+        }
+
+        async function toggleServiceMonitor(serviceName, currentEnabled) {
+            try {
+                const response = await fetch('/api/service-monitor/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        service_name: serviceName,
+                        enabled: !currentEnabled
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    refreshServiceMonitors();
+                } else {
+                    showAlert('Failed to toggle service monitoring: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error toggling service monitoring: ' + error.message, 'danger');
+            }
+        }
+
+        async function startAllServiceMonitors() {
+            if (!confirm('Start monitoring for all services?')) return;
+            
+            try {
+                const response = await fetch('/api/service-monitor/start-all', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    refreshServiceMonitors();
+                } else {
+                    showAlert('Failed to start all monitors: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error starting all monitors: ' + error.message, 'danger');
+            }
+        }
+
+        async function stopAllServiceMonitors() {
+            if (!confirm('Stop monitoring for all services?')) return;
+            
+            try {
+                const response = await fetch('/api/service-monitor/stop-all', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    refreshServiceMonitors();
+                } else {
+                    showAlert('Failed to stop all monitors: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error stopping all monitors: ' + error.message, 'danger');
+            }
+        }
+
+        function filterServiceMonitors() {
+            const statusFilter = document.getElementById('serviceStatusFilter').value;
+            const rows = document.querySelectorAll('#serviceMonitorsTable tr');
+            
+            rows.forEach(row => {
+                if (row.querySelector('td')) {
+                    const statusCell = row.querySelector('td:nth-child(2)');
+                    if (statusCell) {
+                        const status = statusCell.textContent.trim();
+                        if (!statusFilter || status === statusFilter) {
+                            row.style.display = '';
+                        } else {
+                            row.style.display = 'none';
+                        }
+                    }
+                }
+            });
+        }
+
+        // Bulk Operations Functions
+        function bulkConfigureServices() {
+            showAlert('Bulk configuration feature coming soon!', 'info');
+        }
+
+        function exportServiceConfig() {
+            showAlert('Export configuration feature coming soon!', 'info');
+        }
+
+        function importServiceConfig() {
+            showAlert('Import configuration feature coming soon!', 'info');
+        }
+
+        async function testAllServices() {
+            try {
+                const response = await fetch('/api/service-monitor/test-all', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(`Tested ${data.tested_count} services. ${data.failed_count} failed.`, 'info');
+                    refreshServiceMonitors();
+                } else {
+                    showAlert('Failed to test all services: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error testing all services: ' + error.message, 'danger');
+            }
+        }
+
+        async function removeServiceMonitor(serviceName) {
+            if (!confirm(`Remove service ${serviceName} from monitoring?`)) return;
+            
+            try {
+                const response = await fetch('/api/service-monitor/config', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ service_name: serviceName })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    refreshServiceMonitors();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error removing service monitor: ' + error.message, 'danger');
+            }
+        }
+
+        // Resource Monitor Functions
+        async function saveResourceThresholds(event) {
+            event.preventDefault();
+            
+            const serviceName = document.getElementById('resourceServiceName').value.trim();
+            const cpuThreshold = parseFloat(document.getElementById('cpuThreshold').value) || 0;
+            const ramThreshold = parseFloat(document.getElementById('ramThreshold').value) || 0;
+            const emailAlerts = document.getElementById('enableEmailAlerts').checked;
+            
+            if (!serviceName) {
+                showAlert('Service name is required', 'danger');
+                return;
+            }
+            
+            if (cpuThreshold < 0 || cpuThreshold > 100) {
+                showAlert('CPU threshold must be between 0 and 100', 'danger');
+                return;
+            }
+            
+            if (ramThreshold < 0 || ramThreshold > 100) {
+                showAlert('RAM threshold must be between 0 and 100', 'danger');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/service-monitor/thresholds', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        service_name: serviceName,
+                        cpu_threshold: cpuThreshold,
+                        ram_threshold: ramThreshold,
+                        email_alerts_enabled: emailAlerts
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                } else {
+                    showAlert('Failed to save thresholds: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error saving thresholds: ' + error.message, 'danger');
+            }
+        }
+
+        async function checkServiceResources() {
+            const serviceName = document.getElementById('resourceServiceName').value.trim();
+            
+            if (!serviceName) {
+                showAlert('Please enter a service name first', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/service-monitor/threshold-check?service_name=${encodeURIComponent(serviceName)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const result = data.result;
+                    if (result.exceeded) {
+                        showAlert(`Thresholds exceeded! ${result.alerts.length} alerts generated.`, 'warning');
+                        console.log('Threshold alerts:', result.alerts);
+                    } else {
+                        showAlert('No threshold violations detected', 'success');
+                    }
+                } else {
+                    showAlert('Failed to check thresholds: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error checking thresholds: ' + error.message, 'danger');
+            }
+        }
+
+        async function getServiceResourceSummary() {
+            const serviceName = document.getElementById('resourceServiceName').value.trim();
+            
+            if (!serviceName) {
+                showAlert('Please enter a service name first', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/service-monitor/resource-summary?service_name=${encodeURIComponent(serviceName)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResourceSummary(data.summary);
+                    refreshServiceProcesses(serviceName);
+                } else {
+                    showAlert('Failed to get resource summary: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error getting resource summary: ' + error.message, 'danger');
+            }
+        }
+
+        function displayResourceSummary(summary) {
+            const content = document.getElementById('resourceSummaryContent');
+            
+            if (summary.error) {
+                content.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i> ${summary.error}
+                    </div>
+                `;
+                return;
+            }
+            
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-microchip"></i> CPU Usage</h6>
+                        <div class="progress mb-2">
+                            <div class="progress-bar" role="progressbar" style="width: ${summary.total_cpu_percent}%">
+                                ${summary.total_cpu_percent}%
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-memory"></i> RAM Usage</h6>
+                        <div class="progress mb-2">
+                            <div class="progress-bar bg-info" role="progressbar" style="width: ${summary.total_memory_percent}%">
+                                ${summary.total_memory_percent}%
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <small class="text-muted">
+                            <strong>Process Count:</strong> ${summary.process_count}<br>
+                            <strong>Total Memory:</strong> ${summary.total_memory_rss_mb} MB
+                        </small>
+                    </div>
+                    <div class="col-md-6">
+                        <small class="text-muted">
+                            <strong>Service:</strong> ${summary.service_name}<br>
+                            <strong>Timestamp:</strong> ${new Date().toLocaleString()}
+                        </small>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function refreshServiceProcesses(serviceName = null) {
+            if (!serviceName) {
+                serviceName = document.getElementById('resourceServiceName').value.trim();
+            }
+            
+            if (!serviceName) {
+                const tbody = document.getElementById('serviceProcessesTable');
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center text-muted">
+                            <i class="fas fa-info-circle"></i> Select a service to view its processes
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/service-monitor/processes?service_name=${encodeURIComponent(serviceName)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayServiceProcesses(data.processes);
+                } else {
+                    showAlert('Failed to load service processes: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error loading service processes: ' + error.message, 'danger');
+            }
+        }
+
+        function displayServiceProcesses(processes) {
+            const tbody = document.getElementById('serviceProcessesTable');
+            tbody.innerHTML = '';
+            
+            if (processes.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="text-center text-muted">
+                            <i class="fas fa-info-circle"></i> No processes found for this service
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            processes.forEach(process => {
+                const row = document.createElement('tr');
+                const memoryMB = Math.round(process.memory_rss / (1024 * 1024) * 100) / 100;
+                
+                // Format command line arguments
+                let cmdline = 'N/A';
+                if (process.cmdline && process.cmdline.length > 0) {
+                    cmdline = process.cmdline.join(' ');
+                    // Truncate very long command lines
+                    if (cmdline.length > 100) {
+                        cmdline = cmdline.substring(0, 97) + '...';
+                    }
+                }
+                
+                row.innerHTML = `
+                    <td><code>${process.pid}</code></td>
+                    <td>${process.name}</td>
+                    <td>
+                        <span class="badge ${process.cpu_percent > 50 ? 'bg-warning' : 'bg-success'}">
+                            ${process.cpu_percent}%
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge ${process.memory_percent > 10 ? 'bg-warning' : 'bg-info'}">
+                            ${process.memory_percent}%
+                        </span>
+                    </td>
+                    <td>${memoryMB} MB</td>
+                    <td><small class="text-muted">${process.username}</small></td>
+                    <td>
+                        <small class="text-muted" title="Click to view full command line">
+                            <code style="cursor: pointer; color: #007bff;" onclick="showProcessDetails(${process.pid}, '${process.name}', ${JSON.stringify(process).replace(/"/g, '&quot;')})">
+                                ${cmdline}
+                            </code>
+                        </small>
+                    </td>
+                    <td><span class="badge bg-secondary">${process.status}</span></td>
+                    <td>
+                        <button class="btn btn-outline-info btn-sm" onclick="showProcessDetails(${process.pid}, '${process.name}', ${JSON.stringify(process).replace(/"/g, '&quot;')})" title="View detailed process information">
+                            <i class="fas fa-info-circle"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function refreshResourceSummary() {
+            const serviceName = document.getElementById('resourceServiceName').value.trim();
+            if (serviceName) {
+                await getServiceResourceSummary();
+            }
+        }
+
+        // Resource Monitoring Management Functions
+        async function refreshResourceMonitoring() {
+            try {
+                // Get all service monitors first
+                const serviceResponse = await fetch('/api/service-monitor');
+                const serviceData = await serviceResponse.json();
+                
+                if (serviceData.success) {
+                    const services = serviceData.services;
+                    const resourceConfigs = [];
+                    
+                    // Get thresholds for each service
+                    for (const service of services) {
+                        try {
+                            const thresholdResponse = await fetch(`/api/service-monitor/thresholds?service_name=${encodeURIComponent(service.service_name)}`);
+                            const thresholdData = await thresholdResponse.json();
+                            
+                            if (thresholdData.success && thresholdData.thresholds) {
+                                const config = {
+                                    service_name: service.service_name,
+                                    status: service.status,
+                                    last_check: service.last_check,
+                                    ...thresholdData.thresholds
+                                };
+                                resourceConfigs.push(config);
+                            }
+                        } catch (error) {
+                            console.warn(`Failed to get thresholds for ${service.service_name}:`, error);
+                        }
+                    }
+                    
+                    displayResourceMonitoring(resourceConfigs);
+                } else {
+                    showAlert('Failed to load service monitors: ' + serviceData.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error loading resource monitoring: ' + error.message, 'danger');
+            }
+        }
+
+        function displayResourceMonitoring(configs) {
+            const tbody = document.getElementById('resourceMonitoringTable');
+            tbody.innerHTML = '';
+            
+            if (configs.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="text-center text-muted">
+                            <i class="fas fa-info-circle"></i> No resource monitoring configurations found
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            // Update resource monitoring statistics
+            updateResourceMonitoringStats(configs);
+            
+            configs.forEach(config => {
+                const row = document.createElement('tr');
+                const statusClass = config.status === 'Running' ? 'status-running' : 'status-stopped';
+                const emailStatus = config.email_alerts_enabled ? 
+                    '<span class="badge bg-success">Enabled</span>' : 
+                    '<span class="badge bg-secondary">Disabled</span>';
+                
+                // Get current resource usage (this would need to be fetched separately)
+                const currentCpu = config.current_cpu || 0;
+                const currentRam = config.current_ram || 0;
+                
+                // Determine threshold status
+                let thresholdStatus = 'normal';
+                let statusBadge = 'bg-success';
+                let statusText = 'Normal';
+                
+                if (currentCpu > config.cpu_threshold || currentRam > config.ram_threshold) {
+                    thresholdStatus = 'critical';
+                    statusBadge = 'bg-danger';
+                    statusText = 'Critical';
+                } else if (currentCpu > config.cpu_threshold * 0.8 || currentRam > config.ram_threshold * 0.8) {
+                    thresholdStatus = 'warning';
+                    statusBadge = 'bg-warning';
+                    statusText = 'Warning';
+                }
+                
+                // Format last updated date
+                let lastUpdated = 'Never';
+                if (config.updated_at) {
+                    const date = new Date(config.updated_at);
+                    lastUpdated = date.toLocaleString();
+                }
+                
+                row.innerHTML = `
+                    <td><strong>${config.service_name}</strong></td>
+                    <td>
+                        <span class="badge ${config.cpu_threshold > 0 ? 'bg-warning' : 'bg-secondary'}">
+                            ${config.cpu_threshold}%
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge ${config.ram_threshold > 0 ? 'bg-info' : 'bg-secondary'}">
+                            ${config.ram_threshold}%
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge ${currentCpu > 50 ? 'bg-warning' : 'bg-success'}">
+                            ${currentCpu}%
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge ${currentRam > 10 ? 'bg-warning' : 'bg-info'}">
+                            ${currentRam}%
+                        </span>
+                    </td>
+                    <td><span class="badge ${statusBadge}">${statusText}</span></td>
+                    <td>${emailStatus}</td>
+                    <td><small class="text-muted">${lastUpdated}</small></td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary btn-sm" onclick="editResourceMonitoring('${config.service_name}')" title="Edit thresholds">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-outline-info btn-sm" onclick="checkResourceStatus('${config.service_name}')" title="Check current status">
+                                <i class="fas fa-search"></i>
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="viewResourceSummary('${config.service_name}')" title="View resource summary">
+                                <i class="fas fa-chart-bar"></i>
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteResourceMonitoring('${config.service_name}')" title="Delete configuration">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateResourceMonitoringStats(configs) {
+            const total = configs.length;
+            let normal = 0;
+            let warning = 0;
+            let critical = 0;
+            
+            configs.forEach(config => {
+                const currentCpu = config.current_cpu || 0;
+                const currentRam = config.current_ram || 0;
+                
+                if (currentCpu > config.cpu_threshold || currentRam > config.ram_threshold) {
+                    critical++;
+                } else if (currentCpu > config.cpu_threshold * 0.8 || currentRam > config.ram_threshold * 0.8) {
+                    warning++;
+                } else {
+                    normal++;
+                }
+            });
+            
+            document.getElementById('totalThresholdsCount').textContent = total;
+            document.getElementById('normalThresholdsCount').textContent = normal;
+            document.getElementById('warningThresholdsCount').textContent = warning;
+            document.getElementById('criticalThresholdsCount').textContent = critical;
+        }
+
+        async function editResourceMonitoring(serviceName) {
+            try {
+                // Load current thresholds
+                const response = await fetch(`/api/service-monitor/thresholds?service_name=${encodeURIComponent(serviceName)}`);
+                const data = await response.json();
+                
+                if (data.success && data.thresholds) {
+                    const thresholds = data.thresholds;
+                    
+                    // Populate the form
+                    document.getElementById('resourceServiceName').value = serviceName;
+                    document.getElementById('cpuThreshold').value = thresholds.cpu_threshold || 0;
+                    document.getElementById('ramThreshold').value = thresholds.ram_threshold || 0;
+                    document.getElementById('enableEmailAlerts').checked = thresholds.email_alerts_enabled || false;
+                    
+                    showAlert(`Loaded thresholds for ${serviceName}. Modify and save to update.`, 'info');
+                } else {
+                    showAlert(`No thresholds found for ${serviceName}`, 'warning');
+                }
+            } catch (error) {
+                showAlert('Error loading thresholds: ' + error.message, 'danger');
+            }
+        }
+
+        async function checkResourceStatus(serviceName) {
+            try {
+                const response = await fetch(`/api/service-monitor/threshold-check?service_name=${encodeURIComponent(serviceName)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const result = data.result;
+                    if (result.exceeded) {
+                        showAlert(`⚠️ Thresholds exceeded for ${serviceName}! ${result.alerts.length} alerts generated.`, 'warning');
+                        console.log('Threshold alerts:', result.alerts);
+                    } else {
+                        showAlert(`✅ No threshold violations detected for ${serviceName}`, 'success');
+                    }
+                } else {
+                    showAlert('Failed to check thresholds: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error checking thresholds: ' + error.message, 'danger');
+            }
+        }
+
+        async function viewResourceSummary(serviceName) {
+            try {
+                // Set the service name in the form
+                document.getElementById('resourceServiceName').value = serviceName;
+                
+                // Get the resource summary
+                const response = await fetch(`/api/service-monitor/resource-summary?service_name=${encodeURIComponent(serviceName)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResourceSummary(data.summary);
+                    refreshServiceProcesses(serviceName);
+                } else {
+                    showAlert('Failed to get resource summary: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error getting resource summary: ' + error.message, 'danger');
+            }
+        }
+
+        async function deleteResourceMonitoring(serviceName) {
+            if (!confirm(`Delete resource monitoring configuration for ${serviceName}? This will remove all CPU/RAM thresholds and email alerts for this service.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/service-monitor/thresholds?service_name=${encodeURIComponent(serviceName)}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    refreshResourceMonitoring();
+                } else {
+                    showAlert('Failed to delete configuration: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error deleting configuration: ' + error.message, 'danger');
+            }
+        }
+
+        // Enhanced Resource Monitoring Functions
+        async function checkAllThresholds() {
+            try {
+                const response = await fetch('/api/service-monitor/check-all-thresholds', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(`Checked ${data.checked_count} services. ${data.exceeded_count} exceeded thresholds.`, 'info');
+                    refreshResourceMonitoring();
+                } else {
+                    showAlert('Failed to check all thresholds: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error checking all thresholds: ' + error.message, 'danger');
+            }
+        }
+
+        async function testAllAlerts() {
+            try {
+                const response = await fetch('/api/service-monitor/test-all-alerts', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert(`Tested ${data.tested_count} alert configurations. ${data.failed_count} failed.`, 'info');
+                } else {
+                    showAlert('Failed to test all alerts: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error testing all alerts: ' + error.message, 'danger');
+            }
+        }
+
+        function filterThresholds() {
+            const statusFilter = document.getElementById('thresholdStatusFilter').value;
+            const rows = document.querySelectorAll('#resourceMonitoringTable tr');
+            
+            rows.forEach(row => {
+                if (row.querySelector('td')) {
+                    const statusCell = row.querySelector('td:nth-child(6)');
+                    if (statusCell) {
+                        const status = statusCell.textContent.trim().toLowerCase();
+                        if (!statusFilter || status === statusFilter) {
+                            row.style.display = '';
+                        } else {
+                            row.style.display = 'none';
+                        }
+                    }
+                }
+            });
+        }
+
+        // Process Details Functions
+        function showProcessDetails(pid, processName, processData) {
+            const content = document.getElementById('processDetailsContent');
+            
+            // Format command line arguments
+            let cmdlineDisplay = 'N/A';
+            if (processData.cmdline && processData.cmdline.length > 0) {
+                cmdlineDisplay = processData.cmdline.map(arg => `"${arg}"`).join(' ');
+            }
+            
+            // Format memory information
+            const memoryMB = Math.round(processData.memory_rss / (1024 * 1024) * 100) / 100;
+            const memoryVMS = Math.round(processData.memory_vms / (1024 * 1024) * 100) / 100;
+            
+            // Format creation time
+            let createTime = 'N/A';
+            if (processData.create_time) {
+                const date = new Date(processData.create_time * 1000);
+                createTime = date.toLocaleString();
+            }
+            
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-info-circle"></i> Basic Information</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>PID:</strong></td><td><code>${pid}</code></td></tr>
+                            <tr><td><strong>Process Name:</strong></td><td>${processName}</td></tr>
+                            <tr><td><strong>Status:</strong></td><td><span class="badge bg-secondary">${processData.status}</span></td></tr>
+                            <tr><td><strong>Username:</strong></td><td>${processData.username}</td></tr>
+                            <tr><td><strong>Created:</strong></td><td>${createTime}</td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-chart-line"></i> Resource Usage</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>CPU Usage:</strong></td><td><span class="badge ${processData.cpu_percent > 50 ? 'bg-warning' : 'bg-success'}">${processData.cpu_percent}%</span></td></tr>
+                            <tr><td><strong>Memory Usage:</strong></td><td><span class="badge ${processData.memory_percent > 10 ? 'bg-warning' : 'bg-info'}">${processData.memory_percent}%</span></td></tr>
+                            <tr><td><strong>RSS Memory:</strong></td><td>${memoryMB} MB</td></tr>
+                            <tr><td><strong>VMS Memory:</strong></td><td>${memoryVMS} MB</td></tr>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6><i class="fas fa-terminal"></i> Command Line Arguments</h6>
+                        <div class="bg-dark text-light p-3 rounded" style="font-family: 'Courier New', monospace; font-size: 12px; max-height: 200px; overflow-y: auto;">
+                            <div class="text-success">$ ${cmdlineDisplay}</div>
+                        </div>
+                        <small class="text-muted">Full command line used to start this process</small>
+                    </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6><i class="fas fa-list"></i> Raw Process Data</h6>
+                        <div class="bg-light p-3 rounded" style="max-height: 200px; overflow-y: auto;">
+                            <pre style="font-size: 11px; margin: 0;">${JSON.stringify(processData, null, 2)}</pre>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Show the modal
+            const modal = new bootstrap.Modal(document.getElementById('processDetailsModal'));
+            modal.show();
+        }
+
         // Auto-refresh every 30 seconds
         setInterval(() => {
             if (document.getElementById('services-tab').classList.contains('active')) {
                 refreshServices();
             } else if (document.getElementById('ports-tab').classList.contains('active')) {
                 refreshPorts();
+            } else if (document.getElementById('service-monitor-tab').classList.contains('active')) {
+                refreshServiceMonitors();
+            } else if (document.getElementById('resource-monitor-tab').classList.contains('active')) {
+                refreshResourceMonitoring();
             } else if (document.getElementById('logs-tab').classList.contains('active')) {
                 refreshLogs();
             }

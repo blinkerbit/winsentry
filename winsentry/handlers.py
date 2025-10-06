@@ -781,3 +781,743 @@ class ServiceConfigHandler(BaseHandler):
                 'success': False,
                 'error': str(e)
             }, 500)
+
+
+class ServiceMonitorHandler(BaseHandler):
+    """Handle service monitoring requests"""
+    
+    def initialize(self, service_monitor):
+        self.service_monitor = service_monitor
+    
+    async def get(self):
+        """Get monitored services"""
+        try:
+            services = self.service_monitor.get_monitored_services()
+            self.write_json({
+                'success': True,
+                'services': services
+            })
+        except Exception as e:
+            logger.error(f"Failed to get monitored services: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class ServiceMonitorConfigHandler(BaseHandler):
+    """Handle service monitoring configuration"""
+    
+    def initialize(self, service_monitor):
+        self.service_monitor = service_monitor
+    
+    async def post(self):
+        """Add or update service monitoring configuration"""
+        try:
+            data = json.loads(self.request.body)
+            
+            service_name = data.get('service_name')
+            interval = data.get('interval', 30)
+            powershell_script = data.get('powershell_script')
+            powershell_commands = data.get('powershell_commands')
+            
+            if not service_name:
+                self.write_json({
+                    'success': False,
+                    'error': 'Service name is required'
+                }, 400)
+                return
+            
+            # Validate interval
+            if not isinstance(interval, int) or interval < 5:
+                self.write_json({
+                    'success': False,
+                    'error': 'Interval must be an integer >= 5 seconds'
+                }, 400)
+                return
+            
+            success = await self.service_monitor.add_service(
+                service_name=service_name,
+                interval=interval,
+                powershell_script=powershell_script,
+                powershell_commands=powershell_commands
+            )
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Service {service_name} added to monitoring'
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Failed to add service {service_name} to monitoring'
+                }, 500)
+                
+        except Exception as e:
+            logger.error(f"Failed to configure service monitoring: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+    
+    async def put(self):
+        """Update service monitoring configuration"""
+        try:
+            data = json.loads(self.request.body)
+            
+            service_name = data.get('service_name')
+            interval = data.get('interval')
+            powershell_script = data.get('powershell_script')
+            powershell_commands = data.get('powershell_commands')
+            enabled = data.get('enabled')
+            
+            if not service_name:
+                self.write_json({
+                    'success': False,
+                    'error': 'Service name is required'
+                }, 400)
+                return
+            
+            success = await self.service_monitor.update_service_config(
+                service_name=service_name,
+                interval=interval,
+                powershell_script=powershell_script,
+                powershell_commands=powershell_commands,
+                enabled=enabled
+            )
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Service {service_name} configuration updated'
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Failed to update service {service_name} configuration'
+                }, 500)
+                
+        except Exception as e:
+            logger.error(f"Failed to update service monitoring: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+    
+    async def delete(self):
+        """Remove service from monitoring"""
+        try:
+            service_name = self.get_argument('service_name')
+            
+            if not service_name:
+                self.write_json({
+                    'success': False,
+                    'error': 'Service name is required'
+                }, 400)
+                return
+            
+            success = await self.service_monitor.remove_service(service_name)
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Service {service_name} removed from monitoring'
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Failed to remove service {service_name} from monitoring'
+                }, 500)
+                
+        except Exception as e:
+            logger.error(f"Failed to remove service monitoring: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class ServiceEmailConfigHandler(BaseHandler):
+    """Handle service email configuration"""
+    
+    def initialize(self, service_monitor):
+        self.service_monitor = service_monitor
+    
+    async def get(self):
+        """Get service email configuration"""
+        try:
+            service_name = self.get_argument('service_name')
+            
+            if not service_name:
+                self.write_json({
+                    'success': False,
+                    'error': 'Service name is required'
+                }, 400)
+                return
+            
+            config = self.service_monitor.email_alert.get_service_email_config(service_name)
+            self.write_json({
+                'success': True,
+                'config': config
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to get service email config: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+    
+    async def post(self):
+        """Save service email configuration"""
+        try:
+            data = json.loads(self.request.body)
+            
+            service_name = data.get('service_name')
+            config = data.get('config', {})
+            
+            if not service_name:
+                self.write_json({
+                    'success': False,
+                    'error': 'Service name is required'
+                }, 400)
+                return
+            
+            success = self.service_monitor.email_alert.save_service_email_config(service_name, config)
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Email configuration saved for service {service_name}'
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Failed to save email configuration for service {service_name}'
+                }, 500)
+                
+        except Exception as e:
+            logger.error(f"Failed to save service email config: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+    
+    async def delete(self):
+        """Delete service email configuration"""
+        try:
+            service_name = self.get_argument('service_name')
+            
+            if not service_name:
+                self.write_json({
+                    'success': False,
+                    'error': 'Service name is required'
+                }, 400)
+                return
+            
+            success = self.service_monitor.email_alert.delete_service_email_config(service_name)
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Email configuration deleted for service {service_name}'
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Failed to delete email configuration for service {service_name}'
+                }, 500)
+                
+        except Exception as e:
+            logger.error(f"Failed to delete service email config: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class PortProcessHandler(BaseHandler):
+    """Handle port process monitoring requests"""
+    
+    def initialize(self, port_monitor):
+        self.port_monitor = port_monitor
+    
+    async def get(self):
+        """Get processes on a specific port"""
+        try:
+            port = int(self.get_argument('port'))
+            
+            processes = await self.port_monitor.get_processes_on_port(port)
+            
+            self.write_json({
+                'success': True,
+                'port': port,
+                'processes': processes,
+                'process_count': len(processes)
+            })
+            
+        except ValueError:
+            self.write_json({
+                'success': False,
+                'error': 'Invalid port number'
+            }, 400)
+        except Exception as e:
+            logger.error(f"Failed to get processes for port: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class PortResourceSummaryHandler(BaseHandler):
+    """Handle port resource summary requests"""
+    
+    def initialize(self, port_monitor):
+        self.port_monitor = port_monitor
+    
+    async def get(self):
+        """Get comprehensive resource summary for a port"""
+        try:
+            port = int(self.get_argument('port'))
+            
+            summary = await self.port_monitor.get_port_resource_summary(port)
+            
+            self.write_json({
+                'success': True,
+                'summary': summary
+            })
+            
+        except ValueError:
+            self.write_json({
+                'success': False,
+                'error': 'Invalid port number'
+            }, 400)
+        except Exception as e:
+            logger.error(f"Failed to get resource summary for port: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class PortThresholdHandler(BaseHandler):
+    """Handle port resource threshold configuration"""
+    
+    def initialize(self, port_monitor):
+        self.port_monitor = port_monitor
+    
+    async def get(self):
+        """Get port resource thresholds"""
+        try:
+            port = int(self.get_argument('port'))
+            
+            thresholds = self.port_monitor.db.get_port_thresholds(port)
+            
+            self.write_json({
+                'success': True,
+                'port': port,
+                'thresholds': thresholds or {}
+            })
+            
+        except ValueError:
+            self.write_json({
+                'success': False,
+                'error': 'Invalid port number'
+            }, 400)
+        except Exception as e:
+            logger.error(f"Failed to get port thresholds: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+    
+    async def post(self):
+        """Set port resource thresholds"""
+        try:
+            data = json.loads(self.request.body)
+            
+            port = data.get('port')
+            cpu_threshold = data.get('cpu_threshold', 0)
+            ram_threshold = data.get('ram_threshold', 0)
+            email_alerts_enabled = data.get('email_alerts_enabled', False)
+            
+            if not port:
+                self.write_json({
+                    'success': False,
+                    'error': 'Port number is required'
+                }, 400)
+                return
+            
+            # Validate thresholds
+            if cpu_threshold < 0 or cpu_threshold > 100:
+                self.write_json({
+                    'success': False,
+                    'error': 'CPU threshold must be between 0 and 100'
+                }, 400)
+                return
+            
+            if ram_threshold < 0 or ram_threshold > 100:
+                self.write_json({
+                    'success': False,
+                    'error': 'RAM threshold must be between 0 and 100'
+                }, 400)
+                return
+            
+            success = self.port_monitor.db.save_port_thresholds(
+                port=port,
+                cpu_threshold=cpu_threshold,
+                ram_threshold=ram_threshold,
+                email_alerts_enabled=email_alerts_enabled
+            )
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Thresholds saved for port {port}',
+                    'thresholds': {
+                        'port': port,
+                        'cpu_threshold': cpu_threshold,
+                        'ram_threshold': ram_threshold,
+                        'email_alerts_enabled': email_alerts_enabled
+                    }
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Failed to save thresholds for port {port}'
+                }, 500)
+                
+        except Exception as e:
+            logger.error(f"Failed to save port thresholds: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+    
+    async def delete(self):
+        """Delete port resource thresholds"""
+        try:
+            port = int(self.get_argument('port'))
+            
+            success = self.port_monitor.db.delete_port_thresholds(port)
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Thresholds deleted for port {port}'
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Failed to delete thresholds for port {port}'
+                }, 500)
+                
+        except ValueError:
+            self.write_json({
+                'success': False,
+                'error': 'Invalid port number'
+            }, 400)
+        except Exception as e:
+            logger.error(f"Failed to delete port thresholds: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class PortThresholdCheckHandler(BaseHandler):
+    """Handle port threshold checking"""
+    
+    def initialize(self, port_monitor):
+        self.port_monitor = port_monitor
+    
+    async def get(self):
+        """Check if port processes exceed thresholds"""
+        try:
+            port = int(self.get_argument('port'))
+            
+            result = await self.port_monitor.check_resource_thresholds(port)
+            
+            self.write_json({
+                'success': True,
+                'port': port,
+                'result': result
+            })
+            
+        except ValueError:
+            self.write_json({
+                'success': False,
+                'error': 'Invalid port number'
+            }, 400)
+        except Exception as e:
+            logger.error(f"Failed to check port thresholds: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class ProcessLogsHandler(BaseHandler):
+    """Handle process monitoring logs"""
+    
+    def initialize(self, port_monitor):
+        self.port_monitor = port_monitor
+    
+    async def get(self):
+        """Get process monitoring logs"""
+        try:
+            port = self.get_argument('port', None)
+            limit = int(self.get_argument('limit', 100))
+            
+            if port:
+                port = int(port)
+            
+            logs = self.port_monitor.db.get_process_logs(port, limit)
+            
+            self.write_json({
+                'success': True,
+                'logs': logs,
+                'log_count': len(logs)
+            })
+            
+        except ValueError:
+            self.write_json({
+                'success': False,
+                'error': 'Invalid port number or limit'
+            }, 400)
+        except Exception as e:
+            logger.error(f"Failed to get process logs: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class ServiceProcessHandler(BaseHandler):
+    """Handle service process monitoring requests"""
+    
+    def initialize(self, service_monitor):
+        self.service_monitor = service_monitor
+    
+    async def get(self):
+        """Get processes for a specific service"""
+        try:
+            service_name = self.get_argument('service_name')
+            
+            processes = await self.service_monitor.get_service_processes(service_name)
+            
+            self.write_json({
+                'success': True,
+                'service_name': service_name,
+                'processes': processes,
+                'process_count': len(processes)
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to get processes for service: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class ServiceResourceSummaryHandler(BaseHandler):
+    """Handle service resource summary requests"""
+    
+    def initialize(self, service_monitor):
+        self.service_monitor = service_monitor
+    
+    async def get(self):
+        """Get comprehensive resource summary for a service"""
+        try:
+            service_name = self.get_argument('service_name')
+            
+            summary = await self.service_monitor.get_service_resource_summary(service_name)
+            
+            self.write_json({
+                'success': True,
+                'summary': summary
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to get resource summary for service: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class ServiceThresholdHandler(BaseHandler):
+    """Handle service resource threshold configuration"""
+    
+    def initialize(self, service_monitor):
+        self.service_monitor = service_monitor
+    
+    async def get(self):
+        """Get service resource thresholds"""
+        try:
+            service_name = self.get_argument('service_name')
+            
+            thresholds = self.service_monitor.db.get_service_thresholds(service_name)
+            
+            self.write_json({
+                'success': True,
+                'service_name': service_name,
+                'thresholds': thresholds or {}
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to get service thresholds: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+    
+    async def post(self):
+        """Set service resource thresholds"""
+        try:
+            data = json.loads(self.request.body)
+            
+            service_name = data.get('service_name')
+            cpu_threshold = data.get('cpu_threshold', 0)
+            ram_threshold = data.get('ram_threshold', 0)
+            email_alerts_enabled = data.get('email_alerts_enabled', False)
+            
+            if not service_name:
+                self.write_json({
+                    'success': False,
+                    'error': 'Service name is required'
+                }, 400)
+                return
+            
+            # Validate thresholds
+            if cpu_threshold < 0 or cpu_threshold > 100:
+                self.write_json({
+                    'success': False,
+                    'error': 'CPU threshold must be between 0 and 100'
+                }, 400)
+                return
+            
+            if ram_threshold < 0 or ram_threshold > 100:
+                self.write_json({
+                    'success': False,
+                    'error': 'RAM threshold must be between 0 and 100'
+                }, 400)
+                return
+            
+            success = self.service_monitor.db.save_service_thresholds(
+                service_name=service_name,
+                cpu_threshold=cpu_threshold,
+                ram_threshold=ram_threshold,
+                email_alerts_enabled=email_alerts_enabled
+            )
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Thresholds saved for service {service_name}',
+                    'thresholds': {
+                        'service_name': service_name,
+                        'cpu_threshold': cpu_threshold,
+                        'ram_threshold': ram_threshold,
+                        'email_alerts_enabled': email_alerts_enabled
+                    }
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Failed to save thresholds for service {service_name}'
+                }, 500)
+                
+        except Exception as e:
+            logger.error(f"Failed to save service thresholds: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+    
+    async def delete(self):
+        """Delete service resource thresholds"""
+        try:
+            service_name = self.get_argument('service_name')
+            
+            success = self.service_monitor.db.delete_service_thresholds(service_name)
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Thresholds deleted for service {service_name}'
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Failed to delete thresholds for service {service_name}'
+                }, 500)
+                
+        except Exception as e:
+            logger.error(f"Failed to delete service thresholds: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class ServiceThresholdCheckHandler(BaseHandler):
+    """Handle service threshold checking"""
+    
+    def initialize(self, service_monitor):
+        self.service_monitor = service_monitor
+    
+    async def get(self):
+        """Check if service processes exceed thresholds"""
+        try:
+            service_name = self.get_argument('service_name')
+            
+            result = await self.service_monitor.check_service_resource_thresholds(service_name)
+            
+            self.write_json({
+                'success': True,
+                'service_name': service_name,
+                'result': result
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to check service thresholds: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class ServiceProcessLogsHandler(BaseHandler):
+    """Handle service process monitoring logs"""
+    
+    def initialize(self, service_monitor):
+        self.service_monitor = service_monitor
+    
+    async def get(self):
+        """Get service process monitoring logs"""
+        try:
+            service_name = self.get_argument('service_name', None)
+            limit = int(self.get_argument('limit', 100))
+            
+            logs = self.service_monitor.db.get_service_process_logs(service_name, limit)
+            
+            self.write_json({
+                'success': True,
+                'logs': logs,
+                'log_count': len(logs)
+            })
+            
+        except ValueError:
+            self.write_json({
+                'success': False,
+                'error': 'Invalid limit parameter'
+            }, 400)
+        except Exception as e:
+            logger.error(f"Failed to get service process logs: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)

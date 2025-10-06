@@ -4,11 +4,15 @@ A comprehensive Windows Service and Port Monitoring Tool built with Tornado, fea
 
 ## Features
 
-### 🔧 Service Management
+### 🔧 Service Management & Monitoring
 - **List all Windows services** with real-time status
 - **Start, stop, and restart services** with one-click actions
-- **Service status monitoring** with visual indicators
+- **Service status monitoring** with email alerts when a service stops
+- **Configurable check intervals per service** (5s–1h)
 - **Bulk service operations** support
+- **Service process visibility**: PIDs, CPU%, RAM%, RSS/VMS, username, status, full command line arguments
+- **Service resource thresholds**: Define CPU%/RAM% limits per service with alerting
+- **Service process logs**: Historical CPU/RAM usage (per PID) persisted in SQLite
 
 ### 🌐 Port Monitoring
 - **Real-time port monitoring** with configurable intervals
@@ -16,12 +20,18 @@ A comprehensive Windows Service and Port Monitoring Tool built with Tornado, fea
 - **PowerShell script execution** on port failures
 - **Custom recovery actions** per port
 - **Failure count tracking** and statistics
+- **Per-port process visibility**: See processes bound to a port with CPU%, RAM%, cmdline, user
+- **Port resource thresholds**: CPU%/RAM% thresholds with email alerts
+- **Process metrics history**: Rolling logs of process CPU/RAM for ports
 
 ### 📊 Web Interface
 - **Modern, responsive web UI** built with Bootstrap 5
 - **Real-time updates** without page refresh
-- **Service management dashboard**
-- **Port monitoring configuration**
+- **Service management dashboard** (Services tab)
+- **Port monitoring configuration** (Port Monitor tab)
+- **Service Monitor tab**: Add/remove service monitors, see status, interval, failures, recovery script; bulk start/stop; test
+- **Resource Monitor tab**: Configure CPU/RAM thresholds per service, view current usage and summaries, see existing threshold configs with status (Normal/Warning/Critical), check-all/test-all
+- **Enhanced process views**: Per-service processes table with CPU/RAM and clickable command lines; details modal
 - **Comprehensive logging viewer**
 
 ### 🔍 Advanced Features
@@ -31,6 +41,9 @@ A comprehensive Windows Service and Port Monitoring Tool built with Tornado, fea
 - **Comprehensive logging** with rotation
 - **RESTful API** for integration
 - **Windows-specific optimizations**
+- **SQLite database** for configs, logs, thresholds (auto-migrations)
+- **psutil-powered process insights** (CPU, memory, cmdline, user)
+- **Email templates** with service/port-specific content
 
 ## Installation
 
@@ -107,13 +120,17 @@ python test_imports.py
 1. Open your browser to `http://localhost:8888`
 2. Navigate between tabs:
    - **Services**: Manage Windows services
-   - **Port Monitor**: Configure port monitoring
+   - **Port Monitor**: Configure port monitoring and thresholds
+   - **Service Monitor**: Configure monitoring of service state; manage monitored services
+   - **Resource Monitor**: Configure CPU/RAM thresholds for services; view summaries and current status
    - **Logs**: View monitoring logs
 
 ### Service Management
 - View all Windows services with their current status
 - Start, stop, or restart services with one click
 - Real-time status updates
+ - Add services to continuous monitoring with custom intervals and optional PowerShell recovery
+ - See per-service processes with CPU/RAM and command line; open details modal
 
 ### Port Monitoring Setup
 1. Go to the **Port Monitor** tab
@@ -122,6 +139,8 @@ python test_imports.py
    - **Check interval** (5-3600 seconds)
    - **PowerShell recovery script** (optional)
 3. Monitor real-time status and failure counts
+4. View processes bound to a port (CPU%, RAM%, username, cmdline)
+5. Configure CPU/RAM thresholds and enable email alerts
 
 ### PowerShell Recovery Scripts
 Create custom PowerShell scripts for automated recovery:
@@ -154,6 +173,11 @@ Available options:
 - Maximum execution time: 30 seconds
 - Logs are captured and displayed in the UI
 
+### Email Alerts
+- Configure SMTP and templates via the Email Config UI
+- Enable alerts per service/port threshold configuration
+- Built-in templates include service state changes and resource threshold exceedances
+
 ## API Reference
 
 ### Services API
@@ -164,12 +188,36 @@ POST /api/services/{name}/stop        # Stop service
 POST /api/services/{name}/restart     # Restart service
 ```
 
+### Service Monitor API
+```http
+GET    /api/service-monitor                           # List monitored services/status
+POST   /api/service-monitor/config                    # Add/update service monitor (service_name, interval, powershell_script, enabled)
+DELETE /api/service-monitor/config                    # Remove service monitor (JSON: service_name)
+
+GET    /api/service-monitor/processes?service_name=X  # Processes for a service (CPU/RAM/cmdline)
+GET    /api/service-monitor/resource-summary?service_name=X  # Aggregated CPU/RAM summary
+
+GET    /api/service-monitor/thresholds?service_name=X # Get thresholds (CPU/RAM, email)
+POST   /api/service-monitor/thresholds                # Set thresholds (service_name, cpu_threshold, ram_threshold, email_alerts_enabled)
+DELETE /api/service-monitor/thresholds?service_name=X # Delete thresholds
+
+GET    /api/service-monitor/threshold-check?service_name=X   # Check thresholds now
+GET    /api/service-process-logs[?service_name=X][&limit=N]  # Historical process metrics
+```
+
 ### Port Monitoring API
 ```http
 GET /api/ports                       # List monitored ports
 POST /api/ports                      # Add port monitor
 DELETE /api/ports                    # Remove port monitor
 PUT /api/ports/config                # Update port configuration
+GET /api/ports/processes?port=NN     # Processes on port (CPU/RAM/cmdline)
+GET /api/ports/resource-summary?port=NN           # Aggregated CPU/RAM summary
+GET /api/ports/thresholds?port=NN                # Get thresholds
+POST /api/ports/thresholds                       # Set thresholds (port, cpu_threshold, ram_threshold, email_alerts_enabled)
+DELETE /api/ports/thresholds?port=NN             # Delete thresholds
+GET /api/ports/threshold-check?port=NN           # Check thresholds now
+GET /api/process-logs[?port=NN][&limit=N]        # Historical process metrics for ports
 ```
 
 ### Logs API
@@ -215,6 +263,8 @@ WinSentry creates detailed logs in the `logs/` directory:
 - `winsentry.log`: General application logs
 - `port_monitor.log`: Port monitoring events
 - `service_manager.log`: Service management operations
+- `service_monitor.log`: Service monitor and threshold events
+- `process_logs` (SQLite): Historical process CPU/RAM metrics (ports & services)
 
 Log files are automatically rotated when they reach 10MB (5MB for specialized logs).
 
@@ -258,6 +308,7 @@ winsentry/
 ├── main.py              # Entry point
 ├── app.py               # Tornado application
 ├── service_manager.py   # Windows service management
+├── service_monitor.py   # Service monitoring and thresholds
 ├── port_monitor.py      # Port monitoring logic
 ├── handlers.py          # API handlers
 ├── logger.py            # Logging configuration

@@ -52,9 +52,102 @@ class Database:
                     )
                 ''')
                 
+                # Create service configurations table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS service_configs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        service_name TEXT UNIQUE NOT NULL,
+                        interval_seconds INTEGER NOT NULL DEFAULT 30,
+                        powershell_script TEXT,
+                        powershell_commands TEXT,
+                        enabled BOOLEAN NOT NULL DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                # Create service monitoring logs table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS service_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        service_name TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        failure_count INTEGER DEFAULT 0,
+                        message TEXT,
+                        FOREIGN KEY (service_name) REFERENCES service_configs (service_name)
+                    )
+                ''')
+                
+                # Create port resource thresholds table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS port_thresholds (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        port INTEGER UNIQUE NOT NULL,
+                        cpu_threshold REAL DEFAULT 0,
+                        ram_threshold REAL DEFAULT 0,
+                        email_alerts_enabled BOOLEAN DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (port) REFERENCES port_configs (port)
+                    )
+                ''')
+                
+                # Create process monitoring logs table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS process_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        port INTEGER NOT NULL,
+                        pid INTEGER NOT NULL,
+                        process_name TEXT NOT NULL,
+                        cpu_percent REAL,
+                        memory_percent REAL,
+                        memory_rss_bytes INTEGER,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (port) REFERENCES port_configs (port)
+                    )
+                ''')
+                
+                # Create service resource thresholds table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS service_thresholds (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        service_name TEXT UNIQUE NOT NULL,
+                        cpu_threshold REAL DEFAULT 0,
+                        ram_threshold REAL DEFAULT 0,
+                        email_alerts_enabled BOOLEAN DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (service_name) REFERENCES service_configs (service_name)
+                    )
+                ''')
+                
+                # Create service process monitoring logs table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS service_process_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        service_name TEXT NOT NULL,
+                        pid INTEGER NOT NULL,
+                        process_name TEXT NOT NULL,
+                        cpu_percent REAL,
+                        memory_percent REAL,
+                        memory_rss_bytes INTEGER,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (service_name) REFERENCES service_configs (service_name)
+                    )
+                ''')
+                
                 # Create indexes for better performance
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_port_logs_port ON port_logs(port)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_port_logs_timestamp ON port_logs(timestamp)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_service_logs_service ON service_logs(service_name)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_service_logs_timestamp ON service_logs(timestamp)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_port_thresholds_port ON port_thresholds(port)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_process_logs_port ON process_logs(port)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_process_logs_timestamp ON process_logs(timestamp)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_service_thresholds_service ON service_thresholds(service_name)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_service_process_logs_service ON service_process_logs(service_name)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_service_process_logs_timestamp ON service_process_logs(timestamp)')
                 
                 # Add powershell_commands column if it doesn't exist (migration)
                 try:
@@ -252,18 +345,29 @@ class Database:
                 
                 # Get port config count
                 cursor.execute('SELECT COUNT(*) FROM port_configs')
-                config_count = cursor.fetchone()[0]
+                port_config_count = cursor.fetchone()[0]
+                
+                # Get service config count
+                cursor.execute('SELECT COUNT(*) FROM service_configs')
+                service_config_count = cursor.fetchone()[0]
                 
                 # Get total log count
                 cursor.execute('SELECT COUNT(*) FROM port_logs')
-                log_count = cursor.fetchone()[0]
+                port_log_count = cursor.fetchone()[0]
+                
+                # Get service log count
+                cursor.execute('SELECT COUNT(*) FROM service_logs')
+                service_log_count = cursor.fetchone()[0]
                 
                 # Get database size
                 db_size = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
                 
                 return {
-                    'port_configs': config_count,
-                    'log_entries': log_count,
+                    'port_configs': port_config_count,
+                    'service_configs': service_config_count,
+                    'port_log_entries': port_log_count,
+                    'service_log_entries': service_log_count,
+                    'total_log_entries': port_log_count + service_log_count,
                     'database_size_bytes': db_size,
                     'database_size_mb': round(db_size / (1024 * 1024), 2)
                 }
@@ -271,3 +375,467 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to get database stats: {e}")
             return {}
+    
+    # Service monitoring methods
+    def save_service_config(self, service_name: str, interval: int, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None, enabled: bool = True) -> bool:
+        """Save or update service configuration"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT OR REPLACE INTO service_configs 
+                    (service_name, interval_seconds, powershell_script, powershell_commands, enabled, updated_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (service_name, interval, powershell_script, powershell_commands, enabled))
+                
+                conn.commit()
+                logger.info(f"Service configuration saved: service={service_name}, interval={interval}s")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to save service configuration: {e}")
+            return False
+    
+    def get_service_config(self, service_name: str) -> Optional[Dict]:
+        """Get service configuration by service name"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT service_name, interval_seconds, powershell_script, powershell_commands, enabled, created_at, updated_at
+                    FROM service_configs WHERE service_name = ?
+                ''', (service_name,))
+                
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'service_name': row['service_name'],
+                        'interval': row['interval_seconds'],
+                        'powershell_script': row['powershell_script'],
+                        'powershell_commands': row['powershell_commands'],
+                        'enabled': bool(row['enabled']),
+                        'created_at': row['created_at'],
+                        'updated_at': row['updated_at']
+                    }
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to get service configuration: {e}")
+            return None
+    
+    def get_all_service_configs(self) -> List[Dict]:
+        """Get all service configurations"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT service_name, interval_seconds, powershell_script, powershell_commands, enabled, created_at, updated_at
+                    FROM service_configs ORDER BY service_name
+                ''')
+                
+                configs = []
+                for row in cursor.fetchall():
+                    configs.append({
+                        'service_name': row['service_name'],
+                        'interval': row['interval_seconds'],
+                        'powershell_script': row['powershell_script'],
+                        'powershell_commands': row['powershell_commands'],
+                        'enabled': bool(row['enabled']),
+                        'created_at': row['created_at'],
+                        'updated_at': row['updated_at']
+                    })
+                
+                return configs
+                
+        except Exception as e:
+            logger.error(f"Failed to get all service configurations: {e}")
+            return []
+    
+    def delete_service_config(self, service_name: str) -> bool:
+        """Delete service configuration"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('DELETE FROM service_configs WHERE service_name = ?', (service_name,))
+                cursor.execute('DELETE FROM service_logs WHERE service_name = ?', (service_name,))
+                
+                conn.commit()
+                logger.info(f"Service configuration deleted: service={service_name}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to delete service configuration: {e}")
+            return False
+    
+    def log_service_check(self, service_name: str, status: str, failure_count: int = 0, message: str = None) -> bool:
+        """Log a service check result"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT INTO service_logs (service_name, status, failure_count, message)
+                    VALUES (?, ?, ?, ?)
+                ''', (service_name, status, failure_count, message))
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to log service check: {e}")
+            return False
+    
+    def get_service_logs(self, service_name: Optional[str] = None, limit: int = 100) -> List[Dict]:
+        """Get service monitoring logs"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                if service_name:
+                    cursor.execute('''
+                        SELECT service_name, status, timestamp, failure_count, message
+                        FROM service_logs WHERE service_name = ?
+                        ORDER BY timestamp DESC LIMIT ?
+                    ''', (service_name, limit))
+                else:
+                    cursor.execute('''
+                        SELECT service_name, status, timestamp, failure_count, message
+                        FROM service_logs
+                        ORDER BY timestamp DESC LIMIT ?
+                    ''', (limit,))
+                
+                logs = []
+                for row in cursor.fetchall():
+                    logs.append({
+                        'service_name': row['service_name'],
+                        'status': row['status'],
+                        'timestamp': row['timestamp'],
+                        'failure_count': row['failure_count'],
+                        'message': row['message']
+                    })
+                
+                return logs
+                
+        except Exception as e:
+            logger.error(f"Failed to get service logs: {e}")
+            return []
+    
+    def cleanup_old_service_logs(self, days: int = 30) -> int:
+        """Clean up old service logs older than specified days"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    DELETE FROM service_logs 
+                    WHERE timestamp < datetime('now', '-{} days')
+                '''.format(days))
+                
+                deleted_count = cursor.rowcount
+                conn.commit()
+                
+                if deleted_count > 0:
+                    logger.info(f"Cleaned up {deleted_count} old service log entries")
+                
+                return deleted_count
+                
+        except Exception as e:
+            logger.error(f"Failed to cleanup old service logs: {e}")
+            return 0
+    
+    # Port resource threshold methods
+    def save_port_thresholds(self, port: int, cpu_threshold: float = 0, ram_threshold: float = 0, email_alerts_enabled: bool = False) -> bool:
+        """Save or update port resource thresholds"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT OR REPLACE INTO port_thresholds 
+                    (port, cpu_threshold, ram_threshold, email_alerts_enabled, updated_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (port, cpu_threshold, ram_threshold, email_alerts_enabled))
+                
+                conn.commit()
+                logger.info(f"Port thresholds saved: port={port}, cpu={cpu_threshold}%, ram={ram_threshold}%")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to save port thresholds: {e}")
+            return False
+    
+    def get_port_thresholds(self, port: int) -> Optional[Dict]:
+        """Get port resource thresholds"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT port, cpu_threshold, ram_threshold, email_alerts_enabled, created_at, updated_at
+                    FROM port_thresholds WHERE port = ?
+                ''', (port,))
+                
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'port': row['port'],
+                        'cpu_threshold': row['cpu_threshold'],
+                        'ram_threshold': row['ram_threshold'],
+                        'email_alerts_enabled': bool(row['email_alerts_enabled']),
+                        'created_at': row['created_at'],
+                        'updated_at': row['updated_at']
+                    }
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to get port thresholds: {e}")
+            return None
+    
+    def delete_port_thresholds(self, port: int) -> bool:
+        """Delete port resource thresholds"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('DELETE FROM port_thresholds WHERE port = ?', (port,))
+                
+                conn.commit()
+                logger.info(f"Port thresholds deleted: port={port}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to delete port thresholds: {e}")
+            return False
+    
+    def log_process_metrics(self, port: int, pid: int, process_name: str, cpu_percent: float, memory_percent: float, memory_rss_bytes: int) -> bool:
+        """Log process resource metrics"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT INTO process_logs (port, pid, process_name, cpu_percent, memory_percent, memory_rss_bytes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (port, pid, process_name, cpu_percent, memory_percent, memory_rss_bytes))
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to log process metrics: {e}")
+            return False
+    
+    def get_process_logs(self, port: Optional[int] = None, limit: int = 100) -> List[Dict]:
+        """Get process monitoring logs"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                if port:
+                    cursor.execute('''
+                        SELECT port, pid, process_name, cpu_percent, memory_percent, memory_rss_bytes, timestamp
+                        FROM process_logs WHERE port = ?
+                        ORDER BY timestamp DESC LIMIT ?
+                    ''', (port, limit))
+                else:
+                    cursor.execute('''
+                        SELECT port, pid, process_name, cpu_percent, memory_percent, memory_rss_bytes, timestamp
+                        FROM process_logs
+                        ORDER BY timestamp DESC LIMIT ?
+                    ''', (limit,))
+                
+                logs = []
+                for row in cursor.fetchall():
+                    logs.append({
+                        'port': row['port'],
+                        'pid': row['pid'],
+                        'process_name': row['process_name'],
+                        'cpu_percent': row['cpu_percent'],
+                        'memory_percent': row['memory_percent'],
+                        'memory_rss_bytes': row['memory_rss_bytes'],
+                        'memory_rss_mb': round(row['memory_rss_bytes'] / (1024 * 1024), 2),
+                        'timestamp': row['timestamp']
+                    })
+                
+                return logs
+                
+        except Exception as e:
+            logger.error(f"Failed to get process logs: {e}")
+            return []
+    
+    def cleanup_old_process_logs(self, days: int = 30) -> int:
+        """Clean up old process logs older than specified days"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    DELETE FROM process_logs 
+                    WHERE timestamp < datetime('now', '-{} days')
+                '''.format(days))
+                
+                deleted_count = cursor.rowcount
+                conn.commit()
+                
+                if deleted_count > 0:
+                    logger.info(f"Cleaned up {deleted_count} old process log entries")
+                
+                return deleted_count
+                
+        except Exception as e:
+            logger.error(f"Failed to cleanup old process logs: {e}")
+            return 0
+    
+    # Service resource threshold methods
+    def save_service_thresholds(self, service_name: str, cpu_threshold: float = 0, ram_threshold: float = 0, email_alerts_enabled: bool = False) -> bool:
+        """Save or update service resource thresholds"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT OR REPLACE INTO service_thresholds 
+                    (service_name, cpu_threshold, ram_threshold, email_alerts_enabled, updated_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (service_name, cpu_threshold, ram_threshold, email_alerts_enabled))
+                
+                conn.commit()
+                logger.info(f"Service thresholds saved: service={service_name}, cpu={cpu_threshold}%, ram={ram_threshold}%")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to save service thresholds: {e}")
+            return False
+    
+    def get_service_thresholds(self, service_name: str) -> Optional[Dict]:
+        """Get service resource thresholds"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT service_name, cpu_threshold, ram_threshold, email_alerts_enabled, created_at, updated_at
+                    FROM service_thresholds WHERE service_name = ?
+                ''', (service_name,))
+                
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'service_name': row['service_name'],
+                        'cpu_threshold': row['cpu_threshold'],
+                        'ram_threshold': row['ram_threshold'],
+                        'email_alerts_enabled': bool(row['email_alerts_enabled']),
+                        'created_at': row['created_at'],
+                        'updated_at': row['updated_at']
+                    }
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to get service thresholds: {e}")
+            return None
+    
+    def delete_service_thresholds(self, service_name: str) -> bool:
+        """Delete service resource thresholds"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('DELETE FROM service_thresholds WHERE service_name = ?', (service_name,))
+                
+                conn.commit()
+                logger.info(f"Service thresholds deleted: service={service_name}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to delete service thresholds: {e}")
+            return False
+    
+    def log_service_process_metrics(self, service_name: str, pid: int, process_name: str, cpu_percent: float, memory_percent: float, memory_rss_bytes: int) -> bool:
+        """Log service process resource metrics"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT INTO service_process_logs (service_name, pid, process_name, cpu_percent, memory_percent, memory_rss_bytes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (service_name, pid, process_name, cpu_percent, memory_percent, memory_rss_bytes))
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to log service process metrics: {e}")
+            return False
+    
+    def get_service_process_logs(self, service_name: Optional[str] = None, limit: int = 100) -> List[Dict]:
+        """Get service process monitoring logs"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                if service_name:
+                    cursor.execute('''
+                        SELECT service_name, pid, process_name, cpu_percent, memory_percent, memory_rss_bytes, timestamp
+                        FROM service_process_logs WHERE service_name = ?
+                        ORDER BY timestamp DESC LIMIT ?
+                    ''', (service_name, limit))
+                else:
+                    cursor.execute('''
+                        SELECT service_name, pid, process_name, cpu_percent, memory_percent, memory_rss_bytes, timestamp
+                        FROM service_process_logs
+                        ORDER BY timestamp DESC LIMIT ?
+                    ''', (limit,))
+                
+                logs = []
+                for row in cursor.fetchall():
+                    logs.append({
+                        'service_name': row['service_name'],
+                        'pid': row['pid'],
+                        'process_name': row['process_name'],
+                        'cpu_percent': row['cpu_percent'],
+                        'memory_percent': row['memory_percent'],
+                        'memory_rss_bytes': row['memory_rss_bytes'],
+                        'memory_rss_mb': round(row['memory_rss_bytes'] / (1024 * 1024), 2),
+                        'timestamp': row['timestamp']
+                    })
+                
+                return logs
+                
+        except Exception as e:
+            logger.error(f"Failed to get service process logs: {e}")
+            return []
+    
+    def cleanup_old_service_process_logs(self, days: int = 30) -> int:
+        """Clean up old service process logs older than specified days"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    DELETE FROM service_process_logs 
+                    WHERE timestamp < datetime('now', '-{} days')
+                '''.format(days))
+                
+                deleted_count = cursor.rowcount
+                conn.commit()
+                
+                if deleted_count > 0:
+                    logger.info(f"Cleaned up {deleted_count} old service process log entries")
+                
+                return deleted_count
+                
+        except Exception as e:
+            logger.error(f"Failed to cleanup old service process logs: {e}")
+            return 0

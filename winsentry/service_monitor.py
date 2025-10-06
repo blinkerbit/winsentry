@@ -1,11 +1,10 @@
 """
-Port monitoring functionality
+Service monitoring functionality
 """
 
 import asyncio
 import logging
 import os
-import socket
 import subprocess
 import time
 from typing import Dict, List, Optional, Callable
@@ -19,9 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class PortConfig:
-    """Configuration for port monitoring"""
-    port: int
+class ServiceConfig:
+    """Configuration for service monitoring"""
+    service_name: str
     interval: int = 30  # seconds
     powershell_script: Optional[str] = None
     powershell_commands: Optional[str] = None
@@ -31,12 +30,12 @@ class PortConfig:
     failure_count: int = 0
 
 
-class PortMonitor:
-    """Monitors ports for running processes"""
+class ServiceMonitor:
+    """Monitors Windows services for running state"""
     
     def __init__(self, db_path: str = "winsentry.db"):
         self.logger = logging.getLogger(__name__)
-        self.monitored_ports: Dict[int, PortConfig] = {}
+        self.monitored_services: Dict[str, ServiceConfig] = {}
         self.monitoring_task: Optional[asyncio.Task] = None
         self.running = False
         self.db = Database(db_path)
@@ -46,24 +45,24 @@ class PortMonitor:
         self._load_configurations()
     
     def _load_configurations(self):
-        """Load port configurations from database"""
+        """Load service configurations from database"""
         try:
-            configs = self.db.get_all_port_configs()
+            configs = self.db.get_all_service_configs()
             for config in configs:
-                port_config = PortConfig(
-                    port=config['port'],
+                service_config = ServiceConfig(
+                    service_name=config['service_name'],
                     interval=config['interval'],
                     powershell_script=config['powershell_script'],
                     powershell_commands=config['powershell_commands'],
                     enabled=config['enabled']
                 )
-                self.monitored_ports[config['port']] = port_config
-                self.logger.info(f"Loaded port configuration: {config['port']} (interval: {config['interval']}s)")
+                self.monitored_services[config['service_name']] = service_config
+                self.logger.info(f"Loaded service configuration: {config['service_name']} (interval: {config['interval']}s)")
         except Exception as e:
-            self.logger.error(f"Failed to load configurations: {e}")
+            self.logger.error(f"Failed to load service configurations: {e}")
         
-    async def add_port(self, port: int, interval: int = 30, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None) -> bool:
-        """Add a port to monitor"""
+    async def add_service(self, service_name: str, interval: int = 30, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None) -> bool:
+        """Add a service to monitor"""
         try:
             # Validate PowerShell script path if provided
             if powershell_script:
@@ -71,51 +70,51 @@ class PortMonitor:
                     return False
             
             # Save to database first
-            if not self.db.save_port_config(port, interval, powershell_script, powershell_commands, True):
+            if not self.db.save_service_config(service_name, interval, powershell_script, powershell_commands, True):
                 return False
             
-            config = PortConfig(
-                port=port,
+            config = ServiceConfig(
+                service_name=service_name,
                 interval=interval,
                 powershell_script=powershell_script,
                 powershell_commands=powershell_commands,
                 enabled=True
             )
-            self.monitored_ports[port] = config
-            self.logger.info(f"Added port {port} to monitoring with interval {interval}s")
+            self.monitored_services[service_name] = config
+            self.logger.info(f"Added service {service_name} to monitoring with interval {interval}s")
             if powershell_script:
                 self.logger.info(f"PowerShell recovery script configured: {powershell_script}")
             return True
         except Exception as e:
-            self.logger.error(f"Failed to add port {port}: {e}")
+            self.logger.error(f"Failed to add service {service_name}: {e}")
             return False
     
-    async def remove_port(self, port: int) -> bool:
-        """Remove a port from monitoring"""
+    async def remove_service(self, service_name: str) -> bool:
+        """Remove a service from monitoring"""
         try:
             # Remove from database first
-            if not self.db.delete_port_config(port):
+            if not self.db.delete_service_config(service_name):
                 return False
             
-            if port in self.monitored_ports:
-                del self.monitored_ports[port]
-                self.logger.info(f"Removed port {port} from monitoring")
+            if service_name in self.monitored_services:
+                del self.monitored_services[service_name]
+                self.logger.info(f"Removed service {service_name} from monitoring")
                 return True
             return False
         except Exception as e:
-            self.logger.error(f"Failed to remove port {port}: {e}")
+            self.logger.error(f"Failed to remove service {service_name}: {e}")
             return False
     
-    async def update_port_config(self, port: int, interval: Optional[int] = None, 
-                                powershell_script: Optional[str] = None, 
-                                powershell_commands: Optional[str] = None,
-                                enabled: Optional[bool] = None) -> bool:
-        """Update port monitoring configuration"""
+    async def update_service_config(self, service_name: str, interval: Optional[int] = None, 
+                                   powershell_script: Optional[str] = None, 
+                                   powershell_commands: Optional[str] = None,
+                                   enabled: Optional[bool] = None) -> bool:
+        """Update service monitoring configuration"""
         try:
-            if port not in self.monitored_ports:
+            if service_name not in self.monitored_services:
                 return False
             
-            config = self.monitored_ports[port]
+            config = self.monitored_services[service_name]
             if interval is not None:
                 config.interval = interval
             if powershell_script is not None:
@@ -126,13 +125,13 @@ class PortMonitor:
                 config.enabled = enabled
             
             # Update in database
-            if not self.db.save_port_config(port, config.interval, config.powershell_script, config.powershell_commands, config.enabled):
+            if not self.db.save_service_config(service_name, config.interval, config.powershell_script, config.powershell_commands, config.enabled):
                 return False
             
-            self.logger.info(f"Updated configuration for port {port}")
+            self.logger.info(f"Updated configuration for service {service_name}")
             return True
         except Exception as e:
-            self.logger.error(f"Failed to update port {port}: {e}")
+            self.logger.error(f"Failed to update service {service_name}: {e}")
             return False
     
     def _setup_unicode_environment(self) -> dict:
@@ -192,19 +191,34 @@ class PortMonitor:
             self.logger.error(f"Failed to validate PowerShell script {script_path}: {e}")
             return False
 
-    async def is_port_in_use(self, port: int) -> bool:
-        """Check if a port is in use"""
+    async def is_service_running(self, service_name: str) -> bool:
+        """Check if a Windows service is running"""
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(1)
-                result = sock.connect_ex(('localhost', port))
-                return result == 0
+            # Use sc query to check service status
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run([
+                    'sc', 'query', service_name
+                ], capture_output=True, text=True, timeout=10)
+            )
+            
+            if result.returncode != 0:
+                self.logger.warning(f"Service {service_name} not found or error querying: {result.stderr}")
+                return False
+            
+            # Check if service is in RUNNING state
+            output = result.stdout.lower()
+            return 'running' in output
+            
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"Timeout checking service {service_name}")
+            return False
         except Exception as e:
-            self.logger.error(f"Error checking port {port}: {e}")
+            self.logger.error(f"Error checking service {service_name}: {e}")
             return False
     
-    async def execute_powershell_script(self, script_path: str, port: int) -> bool:
-        """Execute a PowerShell script with port parameter"""
+    async def execute_powershell_script(self, script_path: str, service_name: str) -> bool:
+        """Execute a PowerShell script with service name parameter"""
         try:
             if not script_path or not script_path.strip():
                 return False
@@ -221,7 +235,7 @@ class PortMonitor:
                 return False
             
             # Execute PowerShell script in a separate thread to avoid blocking
-            # Pass the port number as a parameter
+            # Pass the service name as a parameter
             loop = asyncio.get_event_loop()
             
             # Setup Unicode environment
@@ -236,33 +250,33 @@ class PortMonitor:
                     'powershell.exe', 
                     '-ExecutionPolicy', 'Bypass', 
                     '-File', script_path,
-                    '-Port', str(port)
+                    '-ServiceName', service_name
                 ], capture_output=True, text=True, timeout=30, encoding='utf-8', errors='replace', env=env)
             )
             
             if result.returncode == 0:
-                self.logger.info(f"PowerShell script executed successfully for port {port}: {script_path}")
+                self.logger.info(f"PowerShell script executed successfully for service {service_name}: {script_path}")
                 if result.stdout:
                     self.logger.info(f"Script output: {result.stdout}")
                 return True
             else:
-                self.logger.error(f"PowerShell script failed for port {port} (exit code {result.returncode}): {result.stderr}")
+                self.logger.error(f"PowerShell script failed for service {service_name} (exit code {result.returncode}): {result.stderr}")
                 return False
                 
         except subprocess.TimeoutExpired:
-            self.logger.error(f"PowerShell script timeout for port {port}: {script_path}")
+            self.logger.error(f"PowerShell script timeout for service {service_name}: {script_path}")
             return False
         except Exception as e:
-            self.logger.error(f"Failed to execute PowerShell script for port {port} {script_path}: {e}")
+            self.logger.error(f"Failed to execute PowerShell script for service {service_name} {script_path}: {e}")
             return False
     
-    async def _create_unicode_powershell_script(self, commands: str, port: int) -> str:
+    async def _create_unicode_powershell_script(self, commands: str, service_name: str) -> str:
         """Create a PowerShell script with Unicode support"""
         import tempfile
         
         script_content = f"""
 # PowerShell script with Unicode support
-param([int]$Port = {port})
+param([string]$ServiceName = "{service_name}")
 
 # Set console to UTF-8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -286,16 +300,16 @@ $env:PYTHONUTF8 = "1"
         
         return script_path
 
-    async def execute_powershell_commands(self, commands: str, port: int = 9999) -> dict:
+    async def execute_powershell_commands(self, commands: str, service_name: str = "TestService") -> dict:
         """Execute PowerShell commands directly and return output"""
         import time
         start_time = time.time()
         
-        self.logger.info(f"Executing PowerShell commands for port {port}: {commands[:100]}...")
+        self.logger.info(f"Executing PowerShell commands for service {service_name}: {commands[:100]}...")
         
         try:
             # Create a Unicode-aware PowerShell script
-            temp_script_path = await self._create_unicode_powershell_script(commands, port)
+            temp_script_path = await self._create_unicode_powershell_script(commands, service_name)
             
             try:
                 # Setup Unicode environment
@@ -311,13 +325,13 @@ $env:PYTHONUTF8 = "1"
                         'powershell.exe', 
                         '-ExecutionPolicy', 'Bypass', 
                         '-File', temp_script_path,
-                        '-Port', str(port)
+                        '-ServiceName', service_name
                     ], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60, env=env)
                 )
                 
                 execution_time = int((time.time() - start_time) * 1000)
                 
-                self.logger.info(f"PowerShell execution completed for port {port}: exit_code={result.returncode}, stdout_length={len(result.stdout)}, stderr_length={len(result.stderr)}")
+                self.logger.info(f"PowerShell execution completed for service {service_name}: exit_code={result.returncode}, stdout_length={len(result.stdout)}, stderr_length={len(result.stderr)}")
                 
                 return {
                     'success': result.returncode == 0,
@@ -336,7 +350,7 @@ $env:PYTHONUTF8 = "1"
                     
         except subprocess.TimeoutExpired:
             execution_time = int((time.time() - start_time) * 1000)
-            self.logger.error(f"PowerShell execution timed out for port {port} after {execution_time}ms")
+            self.logger.error(f"PowerShell execution timed out for service {service_name} after {execution_time}ms")
             return {
                 'success': False,
                 'stdout': '',
@@ -347,7 +361,7 @@ $env:PYTHONUTF8 = "1"
             }
         except Exception as e:
             execution_time = int((time.time() - start_time) * 1000)
-            self.logger.error(f"PowerShell execution failed for port {port}: {e}")
+            self.logger.error(f"PowerShell execution failed for service {service_name}: {e}")
             return {
                 'success': False,
                 'stdout': '',
@@ -357,38 +371,38 @@ $env:PYTHONUTF8 = "1"
                 'error': str(e)
             }
     
-    async def check_port(self, port: int) -> bool:
-        """Check if a specific port is in use"""
-        config = self.monitored_ports.get(port)
+    async def check_service(self, service_name: str) -> bool:
+        """Check if a specific service is running"""
+        config = self.monitored_services.get(service_name)
         if not config or not config.enabled:
             return True
         
-        is_used = await self.is_port_in_use(port)
+        is_running = await self.is_service_running(service_name)
         config.last_check = datetime.now()
-        config.last_status = is_used
+        config.last_status = is_running
         
-        self.logger.debug(f"Port {port} check: {'ONLINE' if is_used else 'OFFLINE'} at {config.last_check}")
+        self.logger.debug(f"Service {service_name} check: {'RUNNING' if is_running else 'STOPPED'} at {config.last_check}")
         
-        if not is_used:
+        if not is_running:
             config.failure_count += 1
-            self.logger.warning(f"Port {port} is not in use (failure #{config.failure_count})")
+            self.logger.warning(f"Service {service_name} is not running (failure #{config.failure_count})")
             
             # Log to database
-            self.db.log_port_check(port, "OFFLINE", config.failure_count, f"Port {port} is offline (failure #{config.failure_count})")
+            self.db.log_service_check(service_name, "STOPPED", config.failure_count, f"Service {service_name} is stopped (failure #{config.failure_count})")
             
-            # Get email configuration for this port
-            email_config = self.email_alert.get_port_email_config(port)
+            # Get email configuration for this service
+            email_config = self.email_alert.get_service_email_config(service_name)
             
             # Execute PowerShell script or commands after N failures
             if config.failure_count >= email_config.get("powershell_script_failures", 3):
                 if config.powershell_script:
-                    await self.execute_powershell_script(config.powershell_script, port)
+                    await self.execute_powershell_script(config.powershell_script, service_name)
                 elif config.powershell_commands:
-                    result = await self.execute_powershell_commands(config.powershell_commands, port)
+                    result = await self.execute_powershell_commands(config.powershell_commands, service_name)
                     if result['success']:
-                        self.logger.info(f"PowerShell commands executed successfully for port {port}")
+                        self.logger.info(f"PowerShell commands executed successfully for service {service_name}")
                     else:
-                        self.logger.error(f"PowerShell commands failed for port {port}: {result.get('stderr', 'Unknown error')}")
+                        self.logger.error(f"PowerShell commands failed for service {service_name}: {result.get('stderr', 'Unknown error')}")
             
             # Send email alert after M failures
             if (email_config.get("enabled", False) and 
@@ -399,20 +413,20 @@ $env:PYTHONUTF8 = "1"
                 if not hasattr(config, 'last_email_sent') or \
                    (datetime.now() - config.last_email_sent).total_seconds() > 300:  # 5 minutes
                     
-                    await self.email_alert.send_alert_email(
-                        port=port,
+                    await self.email_alert.send_service_alert_email(
+                        service_name=service_name,
                         recipients=email_config["recipients"],
                         template_name=email_config.get("template", "default"),
                         custom_data={
                             "failure_count": config.failure_count,
-                            "message": f"Port {port} has been offline for {config.failure_count} consecutive checks"
+                            "message": f"Service {service_name} has been stopped for {config.failure_count} consecutive checks"
                         }
                     )
                     config.last_email_sent = datetime.now()
         else:
             if config.failure_count > 0:
-                # Port came back online
-                self.db.log_port_check(port, "ONLINE", 0, f"Port {port} is back online")
+                # Service came back online
+                self.db.log_service_check(service_name, "RUNNING", 0, f"Service {service_name} is back running")
                 
                 # Reset email sent flag
                 if hasattr(config, 'last_email_sent'):
@@ -420,21 +434,21 @@ $env:PYTHONUTF8 = "1"
                     
             config.failure_count = 0
             
-            # Check resource thresholds if port is online
-            await self._check_port_resources(port)
+            # Check resource thresholds if service is running
+            await self._check_service_resources(service_name)
         
-        return is_used
+        return is_running
     
-    async def _check_port_resources(self, port: int):
-        """Check resource usage for processes on a port"""
+    async def _check_service_resources(self, service_name: str):
+        """Check resource usage for processes of a service"""
         try:
-            # Get processes on the port
-            processes = await self.get_processes_on_port(port)
+            # Get processes for the service
+            processes = await self.get_service_processes(service_name)
             
-            # Log process metrics
+            # Log service process metrics
             for process in processes:
-                self.db.log_process_metrics(
-                    port=port,
+                self.db.log_service_process_metrics(
+                    service_name=service_name,
                     pid=process['pid'],
                     process_name=process['name'],
                     cpu_percent=process['cpu_percent'],
@@ -443,24 +457,24 @@ $env:PYTHONUTF8 = "1"
                 )
             
             # Check thresholds
-            threshold_result = await self.check_resource_thresholds(port)
+            threshold_result = await self.check_service_resource_thresholds(service_name)
             if threshold_result.get('exceeded', False):
-                self.logger.warning(f"Resource thresholds exceeded for port {port}: {len(threshold_result.get('alerts', []))} alerts")
+                self.logger.warning(f"Resource thresholds exceeded for service {service_name}: {len(threshold_result.get('alerts', []))} alerts")
             
         except Exception as e:
-            self.logger.error(f"Failed to check resources for port {port}: {e}")
+            self.logger.error(f"Failed to check resources for service {service_name}: {e}")
     
     async def start_monitoring(self):
-        """Start the port monitoring loop"""
+        """Start the service monitoring loop"""
         if self.running:
             return
         
         self.running = True
         self.monitoring_task = asyncio.create_task(self._monitoring_loop())
-        self.logger.info("Port monitoring started")
+        self.logger.info("Service monitoring started")
     
     async def stop_monitoring(self):
-        """Stop the port monitoring loop"""
+        """Stop the service monitoring loop"""
         self.running = False
         if self.monitoring_task:
             self.monitoring_task.cancel()
@@ -468,39 +482,39 @@ $env:PYTHONUTF8 = "1"
                 await self.monitoring_task
             except asyncio.CancelledError:
                 pass
-        self.logger.info("Port monitoring stopped")
+        self.logger.info("Service monitoring stopped")
     
     async def _monitoring_loop(self):
         """Main monitoring loop"""
-        self.logger.info("Monitoring loop started")
+        self.logger.info("Service monitoring loop started")
         while self.running:
             try:
-                # Check all monitored ports
-                for port, config in self.monitored_ports.items():
+                # Check all monitored services
+                for service_name, config in self.monitored_services.items():
                     if config.enabled:
-                        self.logger.debug(f"Checking port {port}")
-                        await self.check_port(port)
+                        self.logger.debug(f"Checking service {service_name}")
+                        await self.check_service(service_name)
                 
                 # Wait for the shortest interval
-                if self.monitored_ports:
-                    min_interval = min(config.interval for config in self.monitored_ports.values() if config.enabled)
+                if self.monitored_services:
+                    min_interval = min(config.interval for config in self.monitored_services.values() if config.enabled)
                     self.logger.debug(f"Waiting {min_interval} seconds before next check")
                     await asyncio.sleep(min_interval)
                 else:
-                    self.logger.debug("No ports to monitor, waiting 30 seconds")
-                    await asyncio.sleep(30)  # Default wait if no ports
+                    self.logger.debug("No services to monitor, waiting 30 seconds")
+                    await asyncio.sleep(30)  # Default wait if no services
                     
             except asyncio.CancelledError:
-                self.logger.info("Monitoring loop cancelled")
+                self.logger.info("Service monitoring loop cancelled")
                 break
             except Exception as e:
-                self.logger.error(f"Error in monitoring loop: {e}")
+                self.logger.error(f"Error in service monitoring loop: {e}")
                 await asyncio.sleep(5)  # Wait before retrying
     
-    def get_monitored_ports(self) -> List[Dict]:
-        """Get list of monitored ports with their status"""
-        ports = []
-        for port, config in self.monitored_ports.items():
+    def get_monitored_services(self) -> List[Dict]:
+        """Get list of monitored services with their status"""
+        services = []
+        for service_name, config in self.monitored_services.items():
             # Format last check timestamp for display
             last_check_display = None
             if config.last_check:
@@ -535,8 +549,8 @@ $env:PYTHONUTF8 = "1"
                 full_timestamp = last_check_local.strftime("%Y-%m-%d %H:%M:%S")
                 last_check_display = f"{last_check_display} ({full_timestamp})"
             
-            ports.append({
-                'port': port,
+            services.append({
+                'service_name': service_name,
                 'interval': config.interval,
                 'powershell_script': config.powershell_script,
                 'enabled': config.enabled,
@@ -544,121 +558,24 @@ $env:PYTHONUTF8 = "1"
                 'last_check_display': last_check_display,
                 'last_status': config.last_status,
                 'failure_count': config.failure_count,
-                'is_online': config.last_status if config.last_check else None
+                'is_running': config.last_status if config.last_check else None
             })
-        return ports
+        return services
     
-    def get_port_logs(self, port: Optional[int] = None) -> List[Dict]:
-        """Get logs for port monitoring from database"""
+    def get_service_logs(self, service_name: Optional[str] = None) -> List[Dict]:
+        """Get logs for service monitoring from database"""
         try:
-            return self.db.get_port_logs(port, limit=100)
+            return self.db.get_service_logs(service_name, limit=100)
         except Exception as e:
-            self.logger.error(f"Failed to get port logs: {e}")
+            self.logger.error(f"Failed to get service logs: {e}")
             return []
-    
-    async def get_processes_on_port(self, port: int) -> List[Dict]:
-        """Get all processes using a specific port with detailed resource usage"""
-        try:
-            import psutil
-            processes = []
-            
-            for conn in psutil.net_connections(kind='inet'):
-                if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN:
-                    try:
-                        process = psutil.Process(conn.pid)
-                        
-                        # Get CPU and memory usage
-                        cpu_percent = process.cpu_percent()
-                        memory_info = process.memory_info()
-                        memory_percent = process.memory_percent()
-                        
-                        # Get additional process details
-                        try:
-                            cmdline = process.cmdline()
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            cmdline = []
-                        
-                        try:
-                            username = process.username()
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            username = "Unknown"
-                        
-                        processes.append({
-                            'pid': conn.pid,
-                            'name': process.name(),
-                            'status': process.status(),
-                            'create_time': process.create_time(),
-                            'cpu_percent': round(cpu_percent, 2),
-                            'memory_rss': memory_info.rss,  # Resident Set Size in bytes
-                            'memory_vms': memory_info.vms,  # Virtual Memory Size in bytes
-                            'memory_percent': round(memory_percent, 2),
-                            'cmdline': cmdline,
-                            'username': username,
-                            'port': port
-                        })
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        # Process may have died or we don't have access
-                        continue
-            
-            return processes
-            
-        except Exception as e:
-            self.logger.error(f"Failed to get processes on port {port}: {e}")
-            return []
-    
-    async def kill_process(self, pid: int) -> bool:
-        """Kill a process gracefully"""
-        try:
-            import psutil
-            process = psutil.Process(pid)
-            process.terminate()
-            
-            # Wait for process to terminate
-            try:
-                process.wait(timeout=5)
-                self.logger.info(f"Process {pid} terminated gracefully")
-                return True
-            except psutil.TimeoutExpired:
-                # If it doesn't terminate, force kill it
-                process.kill()
-                self.logger.info(f"Process {pid} force killed after timeout")
-                return True
-                
-        except psutil.NoSuchProcess:
-            self.logger.warning(f"Process {pid} no longer exists")
-            return True
-        except psutil.AccessDenied:
-            self.logger.error(f"Access denied when trying to kill process {pid}")
-            return False
-        except Exception as e:
-            self.logger.error(f"Failed to kill process {pid}: {e}")
-            return False
-    
-    async def force_kill_process(self, pid: int) -> bool:
-        """Force kill a process immediately"""
-        try:
-            import psutil
-            process = psutil.Process(pid)
-            process.kill()
-            self.logger.info(f"Process {pid} force killed")
-            return True
-            
-        except psutil.NoSuchProcess:
-            self.logger.warning(f"Process {pid} no longer exists")
-            return True
-        except psutil.AccessDenied:
-            self.logger.error(f"Access denied when trying to force kill process {pid}")
-            return False
-        except Exception as e:
-            self.logger.error(f"Failed to force kill process {pid}: {e}")
-            return False
     
     def cleanup_old_logs(self, days: int = 30) -> int:
         """Clean up old logs from database"""
         try:
-            return self.db.cleanup_old_logs(days)
+            return self.db.cleanup_old_service_logs(days)
         except Exception as e:
-            self.logger.error(f"Failed to cleanup old logs: {e}")
+            self.logger.error(f"Failed to cleanup old service logs: {e}")
             return 0
     
     def get_database_stats(self) -> Dict:
@@ -669,21 +586,84 @@ $env:PYTHONUTF8 = "1"
             self.logger.error(f"Failed to get database stats: {e}")
             return {}
     
-    async def check_resource_thresholds(self, port: int) -> Dict:
-        """Check if processes on a port exceed resource thresholds"""
+    async def get_service_processes(self, service_name: str) -> List[Dict]:
+        """Get all processes for a specific Windows service with detailed resource usage"""
         try:
-            # Get port configuration with thresholds
-            port_config = self.db.get_port_config(port)
-            if not port_config:
+            import psutil
+            processes = []
+            
+            # Get all processes and filter by service name
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'username']):
+                try:
+                    # Check if this process belongs to the service
+                    # We'll use the service name to match against process name or command line
+                    proc_info = proc.info
+                    process_name = proc_info['name'].lower()
+                    cmdline = ' '.join(proc_info['cmdline']).lower() if proc_info['cmdline'] else ''
+                    
+                    # Check if service name appears in process name or command line
+                    cmdline_list = proc_info['cmdline'] or []
+                    if (service_name.lower() in process_name or 
+                        service_name.lower() in cmdline or
+                        any(service_name.lower() in arg.lower() for arg in cmdline_list)):
+                        
+                        process = psutil.Process(proc_info['pid'])
+                        
+                        # Get CPU and memory usage
+                        cpu_percent = process.cpu_percent()
+                        memory_info = process.memory_info()
+                        memory_percent = process.memory_percent()
+                        
+                        # Get additional process details
+                        try:
+                            cmdline_full = process.cmdline()
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            cmdline_full = []
+                        
+                        try:
+                            username = process.username()
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            username = "Unknown"
+                        
+                        processes.append({
+                            'pid': proc_info['pid'],
+                            'name': proc_info['name'],
+                            'status': process.status(),
+                            'create_time': process.create_time(),
+                            'cpu_percent': round(cpu_percent, 2),
+                            'memory_rss': memory_info.rss,  # Resident Set Size in bytes
+                            'memory_vms': memory_info.vms,  # Virtual Memory Size in bytes
+                            'memory_percent': round(memory_percent, 2),
+                            'cmdline': cmdline_full,
+                            'username': username,
+                            'service_name': service_name
+                        })
+                        
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    # Process may have died or we don't have access
+                    continue
+            
+            return processes
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get processes for service {service_name}: {e}")
+            return []
+    
+    async def check_service_resource_thresholds(self, service_name: str) -> Dict:
+        """Check if processes for a service exceed resource thresholds"""
+        try:
+            # Get service configuration with thresholds
+            service_config = self.db.get_service_config(service_name)
+            if not service_config:
                 return {'exceeded': False, 'alerts': []}
             
-            # Get threshold settings (we'll add these to the database schema)
-            thresholds = self.db.get_port_thresholds(port)
+            # Get threshold settings
+            thresholds = self.db.get_service_thresholds(service_name)
             if not thresholds:
                 return {'exceeded': False, 'alerts': []}
             
-            # Get current processes on the port
-            processes = await self.get_processes_on_port(port)
+            # Get current processes for the service
+            processes = await self.get_service_processes(service_name)
             alerts = []
             
             for process in processes:
@@ -696,7 +676,7 @@ $env:PYTHONUTF8 = "1"
                             'type': 'cpu',
                             'value': process['cpu_percent'],
                             'threshold': thresholds['cpu_threshold'],
-                            'message': f"Process {process['name']} (PID {process['pid']}) CPU usage {process['cpu_percent']}% exceeds threshold {thresholds['cpu_threshold']}%"
+                            'message': f"Service {service_name} process {process['name']} (PID {process['pid']}) CPU usage {process['cpu_percent']}% exceeds threshold {thresholds['cpu_threshold']}%"
                         })
                 
                 # Check RAM threshold
@@ -706,7 +686,7 @@ $env:PYTHONUTF8 = "1"
                             'type': 'ram',
                             'value': process['memory_percent'],
                             'threshold': thresholds['ram_threshold'],
-                            'message': f"Process {process['name']} (PID {process['pid']}) RAM usage {process['memory_percent']}% exceeds threshold {thresholds['ram_threshold']}%"
+                            'message': f"Service {service_name} process {process['name']} (PID {process['pid']}) RAM usage {process['memory_percent']}% exceeds threshold {thresholds['ram_threshold']}%"
                         })
                 
                 if process_alerts:
@@ -714,7 +694,7 @@ $env:PYTHONUTF8 = "1"
             
             # Send email alerts if configured
             if alerts and thresholds.get('email_alerts_enabled', False):
-                await self._send_resource_alert_email(port, alerts, thresholds)
+                await self._send_service_resource_alert_email(service_name, alerts, thresholds)
             
             return {
                 'exceeded': len(alerts) > 0,
@@ -723,13 +703,13 @@ $env:PYTHONUTF8 = "1"
             }
             
         except Exception as e:
-            self.logger.error(f"Failed to check resource thresholds for port {port}: {e}")
+            self.logger.error(f"Failed to check resource thresholds for service {service_name}: {e}")
             return {'exceeded': False, 'alerts': [], 'error': str(e)}
     
-    async def _send_resource_alert_email(self, port: int, alerts: List[Dict], thresholds: Dict):
-        """Send email alert for resource threshold violations"""
+    async def _send_service_resource_alert_email(self, service_name: str, alerts: List[Dict], thresholds: Dict):
+        """Send email alert for service resource threshold violations"""
         try:
-            email_config = self.email_alert.get_port_email_config(port)
+            email_config = self.email_alert.get_service_email_config(service_name)
             if not email_config.get('enabled', False) or not email_config.get('recipients'):
                 return
             
@@ -739,28 +719,28 @@ $env:PYTHONUTF8 = "1"
                 alert_summary.append(alert['message'])
             
             # Send alert email
-            await self.email_alert.send_alert_email(
-                port=port,
+            await self.email_alert.send_service_alert_email(
+                service_name=service_name,
                 recipients=email_config["recipients"],
-                template_name=email_config.get("template", "default"),
+                template_name=email_config.get("template", "service_default"),
                 custom_data={
                     "failure_count": len(alerts),
-                    "message": f"Resource threshold violations detected on port {port}",
+                    "message": f"Resource threshold violations detected for service {service_name}",
                     "alert_details": "\n".join(alert_summary),
                     "alert_type": "resource_threshold"
                 }
             )
             
-            self.logger.info(f"Resource threshold alert sent for port {port}")
+            self.logger.info(f"Service resource threshold alert sent for {service_name}")
             
         except Exception as e:
-            self.logger.error(f"Failed to send resource alert email: {e}")
+            self.logger.error(f"Failed to send service resource alert email: {e}")
     
-    async def get_port_resource_summary(self, port: int) -> Dict:
-        """Get comprehensive resource summary for a port"""
+    async def get_service_resource_summary(self, service_name: str) -> Dict:
+        """Get comprehensive resource summary for a service"""
         try:
-            processes = await self.get_processes_on_port(port)
-            thresholds = self.db.get_port_thresholds(port) or {}
+            processes = await self.get_service_processes(service_name)
+            thresholds = self.db.get_service_thresholds(service_name) or {}
             
             # Calculate totals
             total_cpu = sum(p['cpu_percent'] for p in processes)
@@ -768,7 +748,7 @@ $env:PYTHONUTF8 = "1"
             total_memory_rss = sum(p['memory_rss'] for p in processes)
             
             return {
-                'port': port,
+                'service_name': service_name,
                 'process_count': len(processes),
                 'total_cpu_percent': round(total_cpu, 2),
                 'total_memory_percent': round(total_memory, 2),
@@ -780,5 +760,5 @@ $env:PYTHONUTF8 = "1"
             }
             
         except Exception as e:
-            self.logger.error(f"Failed to get resource summary for port {port}: {e}")
+            self.logger.error(f"Failed to get resource summary for service {service_name}: {e}")
             return {'error': str(e)}

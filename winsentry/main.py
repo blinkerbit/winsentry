@@ -13,6 +13,7 @@ from tornado.options import define, options, parse_command_line
 from winsentry.app import WinSentryApplication
 from winsentry.service_manager import ServiceManager
 from winsentry.port_monitor import PortMonitor
+from winsentry.service_monitor import ServiceMonitor
 from winsentry.logger import setup_logging
 
 
@@ -32,9 +33,10 @@ def main():
         # Initialize managers
         service_manager = ServiceManager()
         port_monitor = PortMonitor()
+        service_monitor = ServiceMonitor()
         
         # Create application
-        app = WinSentryApplication(service_manager, port_monitor)
+        app = WinSentryApplication(service_manager, port_monitor, service_monitor)
         
         # Start the server
         logger.info(f"Starting WinSentry on port {options.port}")
@@ -43,12 +45,13 @@ def main():
         # Start the event loop
         loop = ioloop.IOLoop.current()
         
-        # Start port monitoring as a background task
-        def start_monitoring_task():
+        # Start monitoring tasks as background tasks
+        def start_monitoring_tasks():
             asyncio.create_task(port_monitor.start_monitoring())
+            asyncio.create_task(service_monitor.start_monitoring())
         
-        # Schedule the monitoring task to start after the loop begins
-        loop.add_callback(start_monitoring_task)
+        # Schedule the monitoring tasks to start after the loop begins
+        loop.add_callback(start_monitoring_tasks)
         
         # Start the event loop
         loop.start()

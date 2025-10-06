@@ -86,6 +86,24 @@ Please check the system immediately.
 
 Best regards,
 WinSentry Alert System"""
+                    },
+                    "service_default": {
+                        "subject": "WinSentry Alert - Service {service_name} is {status}",
+                        "body": """Dear Administrator,
+
+This is an automated alert from WinSentry.
+
+Service Details:
+- Service: {service_name}
+- Status: {status}
+- Failure Count: {failure_count}
+- Timestamp: {timestamp}
+- Server: {server_name}
+
+Please check the system immediately.
+
+Best regards,
+WinSentry Alert System"""
                     }
                 }
         except Exception as e:
@@ -296,3 +314,106 @@ WinSentry Alert System"""
         except Exception as e:
             self.logger.error(f"Failed to get all port email configs: {e}")
             return []
+    
+    # Service monitoring email methods
+    async def send_service_alert_email(self, service_name: str, recipients: List[str], template_name: str = "service_default", 
+                                     custom_data: Dict = None) -> bool:
+        """Send alert email for service failure"""
+        try:
+            if not self.smtp_config.get("smtp_server"):
+                self.logger.error("SMTP server not configured")
+                return False
+            
+            if not recipients:
+                self.logger.error("No recipients specified")
+                return False
+            
+            # Get template
+            template = self.email_templates.get(template_name, self.email_templates.get("service_default"))
+            if not template:
+                self.logger.error(f"Email template '{template_name}' not found")
+                return False
+            
+            # Prepare email data
+            email_data = {
+                "service_name": service_name,
+                "status": "STOPPED",
+                "failure_count": custom_data.get("failure_count", 0) if custom_data else 0,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "server_name": os.environ.get("COMPUTERNAME", "Unknown Server"),
+                "message": custom_data.get("message", "") if custom_data else ""
+            }
+            
+            # Format subject and body
+            subject = template["subject"].format(**email_data)
+            body = template["body"].format(**email_data)
+            
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = f"{self.smtp_config['from_name']} <{self.smtp_config['from_email']}>"
+            msg['To'] = ", ".join(recipients)
+            msg['Subject'] = subject
+            
+            # Add body
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Send email
+            server = smtplib.SMTP(self.smtp_config["smtp_server"], self.smtp_config["smtp_port"])
+            
+            if self.smtp_config.get("use_tls", True):
+                server.starttls()
+            
+            server.login(self.smtp_config["smtp_username"], self.smtp_config["smtp_password"])
+            
+            text = msg.as_string()
+            server.sendmail(self.smtp_config["from_email"], recipients, text)
+            server.quit()
+            
+            self.logger.info(f"Alert email sent for service {service_name} to {len(recipients)} recipients")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to send service alert email: {e}")
+            return False
+    
+    def get_service_email_config(self, service_name: str) -> Dict:
+        """Get email configuration for specific service"""
+        config_file = f"service_email_config_{service_name}.json"
+        try:
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    return json.load(f)
+            else:
+                return {
+                    "enabled": False,
+                    "recipients": [],
+                    "template": "service_default",
+                    "powershell_script_failures": 3,
+                    "email_alert_failures": 5,
+                    "custom_data": {}
+                }
+        except Exception as e:
+            self.logger.error(f"Failed to get service email config: {e}")
+            return {}
+    
+    def save_service_email_config(self, service_name: str, config: Dict) -> bool:
+        """Save email configuration for specific service"""
+        try:
+            config_file = f"service_email_config_{service_name}.json"
+            with open(config_file, 'w') as f:
+                json.dump(config, f, indent=2)
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to save service email config: {e}")
+            return False
+    
+    def delete_service_email_config(self, service_name: str) -> bool:
+        """Delete email configuration for specific service"""
+        try:
+            config_file = f"service_email_config_{service_name}.json"
+            if os.path.exists(config_file):
+                os.remove(config_file)
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to delete service email config: {e}")
+            return False
