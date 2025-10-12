@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WinSentry - Windows Monitoring Tool</title>
+    <link rel="stylesheet" href="/styles.css?v=9">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>WinSentry</h1>
+            <p class="subtitle">Windows System Monitoring & Alerting</p>
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot"></span>
+                <span>Connected</span>
+            </div>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+            <button class="tab-btn" data-tab="ports">Port Monitoring</button>
+            <button class="tab-btn" data-tab="processes">Process Monitoring</button>
+            <button class="tab-btn" data-tab="services">Services</button>
+            <button class="tab-btn" data-tab="supervise">Supervise</button>
+            <button class="tab-btn" data-tab="system">System Stats</button>
+            <button class="tab-btn" data-tab="alerts">Alerts</button>
+            <button class="tab-btn" data-tab="settings">Settings</button>
+            <button class="tab-btn" data-tab="logs">Logs</button>
+        </nav>
+
+        <main class="tab-content">
+            <!-- Dashboard Tab -->
+            <div id="dashboard" class="tab-pane active">
+                <h2>System Overview</h2>
+                <div class="dashboard-grid">
+                    <div class="stat-card">
+                        <h3>CPU Usage</h3>
+                        <div class="gauge" id="cpuGauge">--%</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Memory Usage</h3>
+                        <div class="gauge" id="memoryGauge">--%</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Active Port Monitors</h3>
+                        <div class="stat-value" id="activePortMonitors">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Active Process Monitors</h3>
+                        <div class="stat-value" id="activeProcessMonitors">0</div>
+                    </div>
+                </div>
+                
+                <div class="refresh-btn-container">
+                    <button onclick="loadDashboard()">Refresh Dashboard</button>
+                </div>
+            </div>
+
+            <!-- Port Monitoring Tab -->
+            <div id="ports" class="tab-pane">
+                <div class="section-header">
+                    <div>
+                        <h2>Port Monitoring</h2>
+                        <p class="section-description">View active monitors and trigger recovery scripts by state.</p>
+                    </div>
+                    <div class="section-actions">
+                        <button class="btn-primary" onclick="openPortModal()">➕ Add Port Monitor</button>
+                        <button class="btn-ghost" onclick="loadPortMonitors()">⟳ Refresh</button>
+                    </div>
+                </div>
+
+                <div class="monitors-list">
+                    <div class="list-header">
+                        <h3>Active Port Monitors</h3>
+                        <p class="list-subtitle">Click a port to see configuration details and actions.</p>
+                    </div>
+                    <div id="portsList"></div>
+                </div>
+            </div>
+
+            <!-- Process Monitoring Tab -->
+            <div id="processes" class="tab-pane">
+                <div class="section-header">
+                    <div>
+                        <h2>Process Monitoring</h2>
+                        <p class="section-description">View active monitors and trigger recovery scripts by state.</p>
+                    </div>
+                    <div class="section-actions">
+                        <button class="btn-primary" onclick="openProcessModal()">➕ Add Process Monitor</button>
+                        <button class="btn-ghost" onclick="loadProcessMonitors()">⟳ Refresh</button>
+                    </div>
+                </div>
+
+                <div class="monitors-list">
+                    <div class="list-header">
+                        <h3>Active Process Monitors</h3>
+                        <p class="list-subtitle">Click a process to see configuration details and actions.</p>
+                    </div>
+                    <div id="processesList"></div>
+                </div>
+            </div>
+
+            <!-- Services Tab -->
+            <div id="services" class="tab-pane">
+                <div class="section-header">
+                    <h2>Service Monitoring</h2>
+                </div>
+                <div class="monitors-list">
+                    <div id="servicesList"></div>
+                </div>
+                <div class="config-section">
+                    <h3>Add New Service Monitor</h3>
+                    <form id="serviceForm" class="config-form" onsubmit="addServiceMonitor(event)">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="serviceName">Service Name *</label>
+                                <input type="text" id="serviceName" required placeholder="e.g., W3SVC">
+                            </div>
+                            <div class="form-group">
+                                <label for="serviceDisplayName">Display Name (optional)</label>
+                                <input type="text" id="serviceDisplayName" placeholder="e.g., World Wide Web Publishing Service">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="serviceInterval">Check Interval (seconds)</label>
+                                <input type="number" id="serviceInterval" value="5" min="1" max="300">
+                            </div>
+                            <div class="form-group">
+                                <label for="serviceStateDuration">State Duration Threshold</label>
+                                <input type="number" id="serviceStateDuration" value="1" min="1">
+                            </div>
+                        </div>
+                        <button type="submit">Add Service Monitor</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Supervise Tab -->
+            <div id="supervise" class="tab-pane">
+                <h2>Process Supervisor</h2>
+                <p class="section-description">Keep processes alive by auto-restarting them when they die</p>
+                
+                <form id="supervisedProcessForm" class="monitoring-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="supervisedName">Name</label>
+                            <input type="text" id="supervisedName" required placeholder="e.g., My Application">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 2;">
+                            <label for="supervisedCommand">PowerShell Command</label>
+                            <input type="text" id="supervisedCommand" required placeholder="e.g., python -m myapp">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 2;">
+                            <label for="supervisedWorkingDir">Working Directory (Optional)</label>
+                            <input type="text" id="supervisedWorkingDir" placeholder="e.g., C:\MyApp">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="supervisedInterval">Check Interval (seconds)</label>
+                            <input type="number" id="supervisedInterval" min="1" value="5">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="supervisedRestartDelay">Restart Delay (seconds)</label>
+                            <input type="number" id="supervisedRestartDelay" min="1" value="3">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="supervisedMaxRestarts">Max Restarts (0 = unlimited)</label>
+                            <input type="number" id="supervisedMaxRestarts" min="0" value="0">
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn-primary">Start Supervising</button>
+                </form>
+
+                <div id="supervisedProcessesList" class="monitors-list"></div>
+            </div>
+
+            <!-- System Stats Tab -->
+            <div id="system" class="tab-pane">
+                <div class="section-header">
+                    <div>
+                        <h2>System Statistics Monitoring</h2>
+                        <p class="section-description">Configure and view system metric monitors.</p>
+                    </div>
+                    <div class="section-actions">
+                        <button class="btn-ghost" onclick="loadSystemMonitors()">⟳ Refresh</button>
+                    </div>
+                </div>
+
+                <div class="monitors-list" id="systemMonitorsList">
+                    <!-- System monitors will be loaded here -->
+                </div>
+
+                <div class="config-section">
+                    <h3>Add New System Monitor</h3>
+                    <form id="systemForm" class="config-form" onsubmit="addSystemMonitor(event)">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="systemMonitorType">Monitor Type *</label>
+                                <select id="systemMonitorType" required onchange="toggleSystemFields()">
+                                    <option value="">Select type...</option>
+                                    <option value="cpu">System CPU</option>
+                                    <option value="ram">System RAM</option>
+                                    <option value="disk">Disk Space</option>
+                                    <option value="process_cpu">Process CPU</option>
+                                    <option value="process_ram">Process RAM</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="systemThreshold">Threshold (%)</label>
+                                <input type="number" id="systemThreshold" min="0" max="100" step="0.1" placeholder="e.g., 80">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group" id="systemProcessRefGroup" style="display: none;">
+                                <label for="systemProcessRef">Process Reference (PID or Port)</label>
+                                <input type="text" id="systemProcessRef" placeholder="PID or port:8080">
+                            </div>
+                            <div class="form-group" id="systemDriveLetterGroup" style="display: none;">
+                                <label for="systemDriveLetter">Drive Letter</label>
+                                <input type="text" id="systemDriveLetter" placeholder="C:" maxlength="2">
+                            </div>
+                            <div class="form-group">
+                                <label for="systemMonitorInterval">Check Interval (seconds)</label>
+                                <input type="number" id="systemMonitorInterval" value="60" min="1" max="3600">
+                            </div>
+                        </div>
+                        <button type="submit">Add System Monitor</button>
+                    </form>
+                </div>
+
+                <div class="section-header" style="margin-top: 2rem;">
+                    <div>
+                        <h2>Live System Stats</h2>
+                        <p class="section-description">A real-time overview of your system's performance.</p>
+                    </div>
+                    <div class="section-actions">
+                        <button class="btn-ghost" onclick="loadSystemStats()">⟳ Check Now</button>
+                    </div>
+                </div>
+                <div class="monitors-list">
+                    <pre id="currentStats" class="code-block"></pre>
+                </div>
+            </div>
+
+            <!-- Alerts Tab -->
+            <div id="alerts" class="tab-pane">
+                <h2>Alert Configuration</h2>
+                <p class="info-text">Configure email alerts for your monitors. Set up SMTP server and email templates in the Settings tab.</p>
+                <div class="monitors-list">
+                    <h3>Alert Rules</h3>
+                    <div id="alertsList"></div>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div id="settings" class="tab-pane">
+                <h2>Settings</h2>
+                
+                <div class="config-section">
+                    <h3>SMTP Server Configuration</h3>
+                    <form id="smtpForm" class="config-form" onsubmit="addSMTPServer(event)">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="smtpHost">SMTP Host *</label>
+                                <input type="text" id="smtpHost" required placeholder="smtp.gmail.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="smtpPort">SMTP Port</label>
+                                <input type="number" id="smtpPort" value="587" min="1" max="65535">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="smtpUsername">Username</label>
+                                <input type="text" id="smtpUsername">
+                            </div>
+                            <div class="form-group">
+                                <label for="smtpPassword">Password</label>
+                                <input type="password" id="smtpPassword">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="smtpFromAddress">From Email Address *</label>
+                            <input type="email" id="smtpFromAddress" required placeholder="alerts@example.com">
+                        </div>
+                        <div class="form-row checkbox-row">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="smtpUseSSL" checked>
+                                Use SSL
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="smtpUseTLS" checked>
+                                Use TLS
+                            </label>
+                        </div>
+                        <button type="submit">Save SMTP Configuration</button>
+                    </form>
+                </div>
+                
+                <div class="config-section">
+                    <h3>Email Recipients</h3>
+                    <form id="recipientForm" class="config-form" onsubmit="addRecipient(event)">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="recipientEmail">Email Address *</label>
+                                <input type="email" id="recipientEmail" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="recipientName">Name</label>
+                                <input type="text" id="recipientName" placeholder="John Doe">
+                            </div>
+                        </div>
+                        <button type="submit">Add Recipient</button>
+                    </form>
+                    <div id="recipientsList"></div>
+                </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="logs" class="tab-pane">
+                <h2>Execution Logs</h2>
+                <div class="log-controls">
+                    <button onclick="loadLogs()">Refresh Logs</button>
+                    <button onclick="loadLogFiles()">Show Log Files</button>
+                </div>
+                <div class="log-viewer" id="logViewer"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Port Monitor Modal -->
+    <div id="portMonitorModal" class="modal" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="portModalTitle">
+            <div class="modal-header">
+                <h3 id="portModalTitle">Add Port Monitor</h3>
+                <button class="modal-close" onclick="closePortModal()" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="portForm" class="config-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="portNumber">Port Number *</label>
+                            <input type="number" id="portNumber" min="1" max="65535" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="portInterval">Check Interval (seconds)</label>
+                            <input type="number" id="portInterval" value="5" min="1" max="300">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="portDurationThreshold">Duration Threshold (intervals)</label>
+                            <input type="number" id="portDurationThreshold" value="4" min="1" title="Run script if status persists for this many intervals">
+                        </div>
+                        <div class="form-group">
+                            <label for="portMaxExecutions">Max Script Executions</label>
+                            <input type="number" id="portMaxExecutions" value="5" min="1" max="50" title="Maximum number of times to execute recovery script">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="portRetryMultiplier">Retry Interval Multiplier</label>
+                            <input type="number" id="portRetryMultiplier" value="10" min="1" max="100" title="Wait (threshold × multiplier) intervals between retries">
+                        </div>
+                        <div class="form-group">
+                            <label for="portTriggerStatus">Run Script When Port Is</label>
+                            <select id="portTriggerStatus" onchange="togglePortScriptSections()">
+                                <option value="stopped">Stopped (Not Running)</option>
+                                <option value="running">Running (Active)</option>
+                                <option value="both">Both States</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Script for STOPPED status -->
+                    <div class="script-section" id="portScriptSectionStopped">
+                        <h4>📌 Script When Port is STOPPED</h4>
+                        <div class="form-group">
+                            <label>Script Type</label>
+                            <select id="portScriptTypeStopped" onchange="togglePortScriptFields('stopped')">
+                                <option value="inline">Inline Script</option>
+                                <option value="file">File Path</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="portScriptContentGroupStopped">
+                            <label for="portScriptContentStopped">PowerShell Script</label>
+                            <textarea id="portScriptContentStopped" rows="4" placeholder="Write-Host 'Port is down, restarting...'&#10;Restart-Service MyService"></textarea>
+                        </div>
+                        <div class="form-group" id="portScriptPathGroupStopped" style="display: none;">
+                            <label for="portScriptPathStopped">Script File Path</label>
+                            <input type="text" id="portScriptPathStopped" placeholder="C:\scripts\restart-service.ps1">
+                        </div>
+                    </div>
+                    
+                    <!-- Script for RUNNING status -->
+                    <div class="script-section" id="portScriptSectionRunning" style="display: none;">
+                        <h4>✅ Script When Port is RUNNING</h4>
+                        <div class="form-group">
+                            <label>Script Type</label>
+                            <select id="portScriptTypeRunning" onchange="togglePortScriptFields('running')">
+                                <option value="inline">Inline Script</option>
+                                <option value="file">File Path</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="portScriptContentGroupRunning">
+                            <label for="portScriptContentRunning">PowerShell Script</label>
+                            <textarea id="portScriptContentRunning" rows="4" placeholder="Write-Host 'Port is up!'&#10;Send-MailMessage -To admin@example.com -Subject 'Service Started'"></textarea>
+                        </div>
+                        <div class="form-group" id="portScriptPathGroupRunning" style="display: none;">
+                            <label for="portScriptPathRunning">Script File Path</label>
+                            <input type="text" id="portScriptPathRunning" placeholder="C:\scripts\notify-running.ps1">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-secondary" onclick="closePortModal()">Cancel</button>
+                        <button type="submit" id="portFormSubmit">Add Port Monitor</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Process Monitor Modal -->
+    <div id="processMonitorModal" class="modal" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="processModalTitle">
+            <div class="modal-header">
+                <h3 id="processModalTitle">Add Process Monitor</h3>
+                <button class="modal-close" onclick="closeProcessModal()" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="processForm" class="config-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="processId">Process ID (PID) *</label>
+                            <input type="number" id="processId" min="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="processName">Process Name (optional)</label>
+                            <input type="text" id="processName" placeholder="e.g., myapp.exe">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="processInterval">Check Interval (seconds)</label>
+                            <input type="number" id="processInterval" value="5" min="1" max="300">
+                        </div>
+                        <div class="form-group">
+                            <label for="processDurationThreshold">Duration Threshold (intervals)</label>
+                            <input type="number" id="processDurationThreshold" value="4" min="1">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="processMaxExecutions">Max Script Executions</label>
+                            <input type="number" id="processMaxExecutions" value="5" min="1" max="50" title="Maximum number of times to execute recovery script">
+                        </div>
+                        <div class="form-group">
+                            <label for="processRetryMultiplier">Retry Interval Multiplier</label>
+                            <input type="number" id="processRetryMultiplier" value="10" min="1" max="100" title="Wait (threshold × multiplier) intervals between retries">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="processTriggerStatus">Run Script When Process Is</label>
+                            <select id="processTriggerStatus" onchange="toggleProcessScriptSections()">
+                                <option value="stopped">Stopped (Not Running)</option>
+                                <option value="running">Running (Active)</option>
+                                <option value="both">Both States</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Script for STOPPED status -->
+                    <div class="script-section" id="processScriptSectionStopped">
+                        <h4>📌 Script When Process is STOPPED</h4>
+                        <div class="form-group">
+                            <label>Script Type</label>
+                            <select id="processScriptTypeStopped" onchange="toggleProcessScriptFields('stopped')">
+                                <option value="inline">Inline Script</option>
+                                <option value="file">File Path</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="processScriptContentGroupStopped">
+                            <label for="processScriptContentStopped">PowerShell Script</label>
+                            <textarea id="processScriptContentStopped" rows="4" placeholder="Start-Process MyApp.exe"></textarea>
+                        </div>
+                        <div class="form-group" id="processScriptPathGroupStopped" style="display: none;">
+                            <label for="processScriptPathStopped">Script File Path</label>
+                            <input type="text" id="processScriptPathStopped" placeholder="C:\scripts\restart-process.ps1">
+                        </div>
+                    </div>
+                    
+                    <!-- Script for RUNNING status -->
+                    <div class="script-section" id="processScriptSectionRunning" style="display: none;">
+                        <h4>✅ Script When Process is RUNNING</h4>
+                        <div class="form-group">
+                            <label>Script Type</label>
+                            <select id="processScriptTypeRunning" onchange="toggleProcessScriptFields('running')">
+                                <option value="inline">Inline Script</option>
+                                <option value="file">File Path</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="processScriptContentGroupRunning">
+                            <label for="processScriptContentRunning">PowerShell Script</label>
+                            <textarea id="processScriptContentRunning" rows="4" placeholder="Write-Host 'Process is running!'"></textarea>
+                        </div>
+                        <div class="form-group" id="processScriptPathGroupRunning" style="display: none;">
+                            <label for="processScriptPathRunning">Script File Path</label>
+                            <input type="text" id="processScriptPathRunning" placeholder="C:\scripts\notify-running.ps1">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-secondary" onclick="closeProcessModal()">Cancel</button>
+                        <button type="submit" id="processFormSubmit">Add Process Monitor</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <script src="/app.js?v=9"></script>
+</body>
+</html>
+
