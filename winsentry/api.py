@@ -27,6 +27,11 @@ def get_db(request: Request):
     return request.app.state.db
 
 
+# Dependency to get app from request
+def get_app(request: Request):
+    return request.app
+
+
 # Health Check
 @router.get("/health")
 async def health_check():
@@ -710,6 +715,36 @@ async def create_system_monitoring(config: SystemMonitoringCreate, db=Depends(ge
     )
     
     sys_id = db.execute_insert(query, params)
+    
+    # Automatically create a threshold alert rule for this system monitor
+    try:
+        # Get the first available recipient
+        recipients = db.execute_query("SELECT id FROM recipients WHERE enabled = 1 LIMIT 1")
+        if recipients:
+            recipient_id = recipients[0][0]
+            
+            # Create alert rule for threshold breach
+            alert_query = """
+                INSERT INTO alert_rules (monitored_item_id, monitored_item_type, alert_condition,
+                           condition_value, recurring_schedule, template_id, enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+            alert_params = (
+                sys_id, "system", "threshold", 
+                json.dumps({"threshold": config.threshold_value, "metric": config.monitor_type.value}),
+                None, None, True
+            )
+            
+            alert_id = db.execute_insert(alert_query, alert_params)
+            
+            # Add recipient to alert
+            db.execute_insert(
+                "INSERT INTO alert_recipients (alert_id, recipient_id) VALUES (?, ?)",
+                (alert_id, recipient_id)
+            )
+    except Exception as e:
+        print(f"Warning: Could not create automatic alert rule for system monitor {sys_id}: {e}")
+    
     row = db.execute_query("SELECT * FROM system_monitoring WHERE id = ?", (sys_id,))[0]
     return dict(row)
 
@@ -730,6 +765,49 @@ async def get_system_stats(request: Request):
 
 
 # Alert Rules Endpoints
+@router.get("/email-logs", response_model=List[Dict[str, Any]])
+async def get_email_logs(filename: Optional[str] = None, limit: int = 100, offset: int = 0, app=Depends(get_app)):
+    """Get email alert logs"""
+    return app.state.alert_engine.read_email_logs(filename, limit, offset)
+
+
+@router.get("/email-logs/search", response_model=List[Dict[str, Any]])
+async def search_email_logs(
+    alert_rule_id: Optional[int] = None,
+    recipient_email: Optional[str] = None,
+    event_type: Optional[str] = None,
+    success: Optional[bool] = None,
+    limit: int = 100,
+    app=Depends(get_app)
+):
+    """Search email logs by criteria"""
+    return app.state.alert_engine.search_email_logs(
+        alert_rule_id, recipient_email, event_type, success, limit
+    )
+
+
+@router.get("/email-logs/files", response_model=List[str])
+async def get_email_log_files(app=Depends(get_app)):
+    """Get list of email log files"""
+    return app.state.alert_engine.get_email_log_files()
+
+
+@router.get("/email-logs/statistics", response_model=Dict[str, Any])
+async def get_email_statistics(days: int = 7, app=Depends(get_app)):
+    """Get email sending statistics"""
+    return app.state.alert_engine.get_email_statistics(days)
+
+
+@router.post("/email/test", response_model=Dict[str, Any])
+async def send_test_email(
+    smtp_server_id: Optional[int] = None,
+    recipient_email: Optional[str] = None,
+    app=Depends(get_app)
+):
+    """Send a test email to verify SMTP configuration"""
+    return app.state.alert_engine.send_test_email(smtp_server_id, recipient_email)
+
+
 @router.get("/alerts", response_model=List[Dict[str, Any]])
 async def get_alert_rules(db=Depends(get_db)):
     """Get all alert rules"""
@@ -769,6 +847,90 @@ async def delete_alert_rule(alert_id: int, db=Depends(get_db)):
     """Delete an alert rule"""
     db.execute_update("DELETE FROM alert_rules WHERE id = ?", (alert_id,))
     return {"message": "Alert rule deleted successfully"}
+
+
+@router.post("/alerts/{alert_id}/toggle")
+async def toggle_alert_rule(alert_id: int, enabled: bool, db=Depends(get_db)):
+    """Toggle alert rule enabled/disabled status"""
+    db.execute_update(
+        "UPDATE alert_rules SET enabled = ? WHERE id = ?", 
+        (enabled, alert_id)
+    )
+    return {"message": f"Alert rule {'enabled' if enabled else 'disabled'}"}
+
+
+@router.post("/alerts/auto-create")
+async def auto_create_alert_rules(db=Depends(get_db)):
+    """Automatically create alert rules for existing monitors"""
+    created_count = 0
+    
+    try:
+        # Get all recipients
+        recipients = db.execute_query("SELECT id FROM recipients WHERE enabled = 1")
+        if not recipients:
+            return {"message": "No recipients found. Please add recipients first.", "created_count": 0}
+        
+        recipient_id = recipients[0][0]
+        
+        # Create alerts for system monitors
+        system_monitors = db.execute_query("SELECT id, monitor_type, threshold_value FROM system_monitoring WHERE enabled = 1")
+        for monitor in system_monitors:
+            # Check if alert already exists
+            existing = db.execute_query(
+                "SELECT id FROM alert_rules WHERE monitored_item_type = 'system' AND monitored_item_id = ? AND alert_condition = 'threshold'",
+                (monitor[0],)
+            )
+            if not existing:
+                alert_id = db.execute_insert(
+                    "INSERT INTO alert_rules (monitored_item_id, monitored_item_type, alert_condition, condition_value, enabled) VALUES (?, ?, ?, ?, ?)",
+                    (monitor[0], "system", "threshold", json.dumps({"threshold": monitor[2], "metric": monitor[1]}), True)
+                )
+                db.execute_insert(
+                    "INSERT INTO alert_recipients (alert_id, recipient_id) VALUES (?, ?)",
+                    (alert_id, recipient_id)
+                )
+                created_count += 1
+        
+        # Create alerts for port monitors
+        port_monitors = db.execute_query("SELECT id FROM port_monitoring WHERE enabled = 1")
+        for monitor in port_monitors:
+            existing = db.execute_query(
+                "SELECT id FROM alert_rules WHERE monitored_item_type = 'port' AND monitored_item_id = ? AND alert_condition = 'status_change'",
+                (monitor[0],)
+            )
+            if not existing:
+                alert_id = db.execute_insert(
+                    "INSERT INTO alert_rules (monitored_item_id, monitored_item_type, alert_condition, condition_value, enabled) VALUES (?, ?, ?, ?, ?)",
+                    (monitor[0], "port", "status_change", json.dumps({"from_status": "running", "to_status": "stopped"}), True)
+                )
+                db.execute_insert(
+                    "INSERT INTO alert_recipients (alert_id, recipient_id) VALUES (?, ?)",
+                    (alert_id, recipient_id)
+                )
+                created_count += 1
+        
+        # Create alerts for process monitors
+        process_monitors = db.execute_query("SELECT id FROM process_monitoring WHERE enabled = 1")
+        for monitor in process_monitors:
+            existing = db.execute_query(
+                "SELECT id FROM alert_rules WHERE monitored_item_type = 'process' AND monitored_item_id = ? AND alert_condition = 'status_change'",
+                (monitor[0],)
+            )
+            if not existing:
+                alert_id = db.execute_insert(
+                    "INSERT INTO alert_rules (monitored_item_id, monitored_item_type, alert_condition, condition_value, enabled) VALUES (?, ?, ?, ?, ?)",
+                    (monitor[0], "process", "status_change", json.dumps({"from_status": "running", "to_status": "stopped"}), True)
+                )
+                db.execute_insert(
+                    "INSERT INTO alert_recipients (alert_id, recipient_id) VALUES (?, ?)",
+                    (alert_id, recipient_id)
+                )
+                created_count += 1
+        
+        return {"message": f"Created {created_count} alert rules automatically", "created_count": created_count}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating alert rules: {str(e)}")
 
 
 # Email Templates Endpoints
@@ -826,6 +988,27 @@ async def create_email_server(server: EmailServerCreate, db=Depends(get_db)):
     
     srv_id = db.execute_insert(query, params)
     row = db.execute_query("SELECT * FROM email_servers WHERE id = ?", (srv_id,))[0]
+    return dict(row)
+
+
+@router.put("/smtp/{server_id}", response_model=Dict[str, Any])
+async def update_email_server(server_id: int, server: EmailServerCreate, db=Depends(get_db)):
+    """Update an existing email server configuration"""
+    query = """
+        UPDATE email_servers SET 
+            smtp_host = ?, smtp_port = ?, use_ssl = ?, use_tls = ?, username = ?,
+            password = ?, from_address = ?, default_template_id = ?, is_active = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """
+    params = (
+        server.smtp_host, server.smtp_port, server.use_ssl, server.use_tls, server.username,
+        server.password, server.from_address, server.default_template_id, server.is_active,
+        server_id
+    )
+    
+    db.execute_update(query, params)
+    row = db.execute_query("SELECT * FROM email_servers WHERE id = ?", (server_id,))[0]
     return dict(row)
 
 
@@ -995,4 +1178,50 @@ async def get_monitoring_logs(request: Request):
     monitoring_logger = request.app.state.monitoring_logger
     # Read recent monitoring logs
     return {"message": "Monitoring logs endpoint"}
+
+
+@router.get("/logs/file/{log_type}/{filename}")
+async def get_log_file_content(request: Request, log_type: str, filename: str):
+    """Get content of a specific log file"""
+    try:
+        if log_type == "script_execution":
+            log_manager = request.app.state.log_manager
+            filepath = os.path.join(log_manager.log_dir, filename)
+        elif log_type == "monitoring":
+            monitoring_logger = request.app.state.monitoring_logger
+            filepath = os.path.join(monitoring_logger.log_dir, filename)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid log type")
+        
+        if not os.path.exists(filepath):
+            raise HTTPException(status_code=404, detail="Log file not found")
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        return {
+            "filename": filename,
+            "path": filepath,
+            "content": content,
+            "size": len(content)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading log file: {str(e)}")
+
+
+@router.get("/logs/download")
+async def download_log_file(request: Request, path: str):
+    """Download a log file"""
+    try:
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=path,
+            filename=os.path.basename(path),
+            media_type='text/plain'
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
 

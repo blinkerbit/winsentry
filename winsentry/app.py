@@ -54,7 +54,7 @@ def create_app(db: DatabaseManager, log_dir: str, workers: int = 4) -> FastAPI:
         max_workers=workers,
         log_manager=log_manager_module.log_manager
     )
-    alert_engine_module.alert_engine = AlertEngine(db)
+    alert_engine_module.alert_engine = AlertEngine(db, os.path.join(log_dir, "email_alerts"))
     
     # Store in app state for access in endpoints
     app.state.db = db

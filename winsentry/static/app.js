@@ -20,6 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const processForm = document.getElementById('processForm');
     processForm.addEventListener('submit', handleProcessFormSubmit);
+
+    const alertForm = document.getElementById('alertForm');
+    alertForm.addEventListener('submit', addAlertRule);
 });
 
 function handlePortFormSubmit(event) {
@@ -96,6 +99,7 @@ function loadTabData(tabId) {
             break;
         case 'settings':
             loadRecipients();
+            loadSMTPServers();
             break;
         case 'logs':
             loadLogs();
@@ -195,12 +199,14 @@ function openPortModal(port = null) {
     }
 
     modal.setAttribute('aria-hidden', 'false');
+    modal.classList.add('show');
     document.body.classList.add('modal-open');
 }
 
 function closePortModal() {
     const modal = document.getElementById('portMonitorModal');
     modal.setAttribute('aria-hidden', 'true');
+    modal.classList.remove('show');
     document.body.classList.remove('modal-open');
 }
 
@@ -517,12 +523,14 @@ function openProcessModal(process = null) {
     }
 
     modal.setAttribute('aria-hidden', 'false');
+    modal.classList.add('show');
     document.body.classList.add('modal-open');
 }
 
 function closeProcessModal() {
     const modal = document.getElementById('processMonitorModal');
     modal.setAttribute('aria-hidden', 'true');
+    modal.classList.remove('show');
     document.body.classList.remove('modal-open');
 }
 
@@ -1344,11 +1352,13 @@ async function loadAlerts() {
         listEl.innerHTML = alerts.map(alert => `
             <div class="monitor-item">
                 <div class="monitor-info">
-                    <strong>${alert.monitored_item_type} #${alert.monitored_item_id}</strong>
-                    <small>Condition: ${alert.alert_condition}</small>
+                    <strong>${alert.monitored_item_type.toUpperCase()} #${alert.monitored_item_id}</strong>
+                    <small>Condition: ${alert.alert_condition.replace('_', ' ').toUpperCase()}</small>
                     ${alert.condition_value ? `<small>Value: ${alert.condition_value}</small>` : ''}
+                    <small>Status: ${alert.enabled ? '🟢 Enabled' : '⭕ Disabled'}</small>
                 </div>
                 <div class="monitor-actions">
+                    <button class="btn-warning" onclick="toggleAlert(${alert.id}, ${!alert.enabled})">${alert.enabled ? 'Disable' : 'Enable'}</button>
                     <button class="btn-danger" onclick="deleteAlert(${alert.id})">Delete</button>
                 </div>
             </div>
@@ -1357,6 +1367,185 @@ async function loadAlerts() {
     } catch (error) {
         console.error('Error loading alerts:', error);
         showNotification('Error loading alerts', 'error');
+    }
+}
+
+function openAlertModal() {
+    const modal = document.getElementById('alertModal');
+    const form = document.getElementById('alertForm');
+    
+    form.reset();
+    loadAlertRecipients();
+    
+    modal.setAttribute('aria-hidden', 'false');
+    modal.classList.add('show');
+    document.body.classList.add('modal-open');
+}
+
+function closeAlertModal() {
+    const modal = document.getElementById('alertModal');
+    modal.setAttribute('aria-hidden', 'true');
+    modal.classList.remove('show');
+    document.body.classList.remove('modal-open');
+}
+
+async function updateAlertMonitorOptions() {
+    const monitorType = document.getElementById('alertMonitorType').value;
+    const monitorIdSelect = document.getElementById('alertMonitorId');
+    
+    monitorIdSelect.innerHTML = '<option value="">Select monitor...</option>';
+    
+    if (!monitorType) return;
+    
+    try {
+        let response;
+        switch (monitorType) {
+            case 'port':
+                response = await fetch(`${API_BASE}/ports`);
+                break;
+            case 'process':
+                response = await fetch(`${API_BASE}/processes`);
+                break;
+            case 'service':
+                response = await fetch(`${API_BASE}/services`);
+                break;
+            case 'system':
+                response = await fetch(`${API_BASE}/system`);
+                break;
+        }
+        
+        if (response && response.ok) {
+            const monitors = await response.json();
+            monitors.forEach(monitor => {
+                const option = document.createElement('option');
+                option.value = monitor.id;
+                option.textContent = `${monitorType.toUpperCase()} #${monitor.id}${monitor.name ? ` - ${monitor.name}` : ''}`;
+                monitorIdSelect.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading monitors:', error);
+    }
+}
+
+function updateAlertConditionFields() {
+    const condition = document.getElementById('alertCondition').value;
+    const conditionValueGroup = document.getElementById('alertConditionValueGroup');
+    const conditionValueInput = document.getElementById('alertConditionValue');
+    
+    if (condition === 'status_change') {
+        conditionValueGroup.style.display = 'block';
+        conditionValueInput.placeholder = '{"from_status": "running", "to_status": "stopped"}';
+    } else if (condition === 'duration') {
+        conditionValueGroup.style.display = 'block';
+        conditionValueInput.placeholder = '{"status": "stopped", "interval_count": 3}';
+    } else if (condition === 'threshold') {
+        conditionValueGroup.style.display = 'block';
+        conditionValueInput.placeholder = '{"threshold": 80, "metric": "cpu"}';
+    } else if (condition === 'recurring') {
+        conditionValueGroup.style.display = 'block';
+        conditionValueInput.placeholder = '{"schedule": "0 9 * * *"}';
+    } else {
+        conditionValueGroup.style.display = 'none';
+    }
+}
+
+async function loadAlertRecipients() {
+    try {
+        const response = await fetch(`${API_BASE}/recipients`);
+        const recipients = await response.json();
+        
+        const select = document.getElementById('alertRecipients');
+        select.innerHTML = '';
+        
+        recipients.forEach(recipient => {
+            const option = document.createElement('option');
+            option.value = recipient.id;
+            option.textContent = `${recipient.email_address}${recipient.name ? ` (${recipient.name})` : ''}`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading recipients:', error);
+    }
+}
+
+async function addAlertRule(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    const recipientIds = Array.from(document.getElementById('alertRecipients').selectedOptions).map(opt => parseInt(opt.value));
+    
+    const alertData = {
+        monitored_item_id: parseInt(document.getElementById('alertMonitorId').value),
+        monitored_item_type: document.getElementById('alertMonitorType').value,
+        alert_condition: document.getElementById('alertCondition').value,
+        condition_value: document.getElementById('alertConditionValue').value || null,
+        recurring_schedule: null,
+        template_id: null,
+        enabled: true,
+        recipient_ids: recipientIds
+    };
+    
+    try {
+        const response = await fetch(`${API_BASE}/alerts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(alertData)
+        });
+        
+        if (response.ok) {
+            showNotification('Alert rule added successfully!', 'success');
+            closeAlertModal();
+            loadAlerts();
+        } else {
+            const errorData = await response.json();
+            showNotification(`Error: ${errorData.detail}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error adding alert rule:', error);
+        showNotification('Error adding alert rule', 'error');
+    }
+}
+
+async function toggleAlert(alertId, enabled) {
+    try {
+        const response = await fetch(`${API_BASE}/alerts/${alertId}/toggle?enabled=${enabled}`, {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            showNotification(`Alert rule ${enabled ? 'enabled' : 'disabled'} successfully!`, 'success');
+            loadAlerts();
+        } else {
+            showNotification('Error toggling alert rule', 'error');
+        }
+    } catch (error) {
+        console.error('Error toggling alert:', error);
+        showNotification('Error toggling alert rule', 'error');
+    }
+}
+
+async function autoCreateAlerts() {
+    if (!confirm('This will create alert rules for all existing monitors. Continue?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/alerts/auto-create`, {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            showNotification(result.message, 'success');
+            loadAlerts();
+        } else {
+            const errorData = await response.json();
+            showNotification(`Error: ${errorData.detail}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error auto-creating alerts:', error);
+        showNotification('Error auto-creating alert rules', 'error');
     }
 }
 
@@ -1379,8 +1568,52 @@ async function deleteAlert(id) {
 }
 
 // Settings
-async function addSMTPServer(event) {
+async function loadSMTPServers() {
+    try {
+        const response = await fetch(`${API_BASE}/smtp`);
+        const servers = await response.json();
+        
+        const listEl = document.getElementById('smtpServersList');
+        if (servers.length === 0) {
+            listEl.innerHTML = '<div class="empty-state">No SMTP servers configured</div>';
+            return;
+        }
+        
+        listEl.innerHTML = servers.map(server => `
+            <div class="config-item">
+                <div class="config-info">
+                    <h5>${server.smtp_host}:${server.smtp_port}</h5>
+                    <p>From: ${server.from_address}${server.username ? ` | User: ${server.username}` : ''}</p>
+                    <div class="config-status">
+                        <span class="status-badge ${server.is_active ? 'active' : 'inactive'}">
+                            ${server.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                        <span class="status-badge ${server.use_ssl ? 'active' : 'inactive'}">
+                            ${server.use_ssl ? 'SSL' : 'No SSL'}
+                        </span>
+                        <span class="status-badge ${server.use_tls ? 'active' : 'inactive'}">
+                            ${server.use_tls ? 'TLS' : 'No TLS'}
+                        </span>
+                    </div>
+                </div>
+                <div class="config-actions">
+                    <button onclick="editSMTPServer(${server.id})" class="btn-secondary">Edit</button>
+                    <button onclick="testSMTPServer(${server.id})" class="btn-info">📧 Test</button>
+                    <button onclick="deleteSMTPServer(${server.id})" class="btn-danger">Delete</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading SMTP servers:', error);
+        showNotification('Error loading SMTP servers', 'error');
+    }
+}
+
+async function saveSMTPServer(event) {
     event.preventDefault();
+    
+    const serverId = document.getElementById('smtpServerId').value;
+    const isEdit = serverId !== '';
     
     const data = {
         smtp_host: document.getElementById('smtpHost').value,
@@ -1390,26 +1623,235 @@ async function addSMTPServer(event) {
         from_address: document.getElementById('smtpFromAddress').value,
         use_ssl: document.getElementById('smtpUseSSL').checked,
         use_tls: document.getElementById('smtpUseTLS').checked,
-        default_template_id: null,
-        is_active: true
+        is_active: document.getElementById('smtpIsActive').checked,
+        default_template_id: null
     };
     
     try {
-        const response = await fetch(`${API_BASE}/smtp`, {
-            method: 'POST',
+        const url = isEdit ? `${API_BASE}/smtp/${serverId}` : `${API_BASE}/smtp`;
+        const method = isEdit ? 'PUT' : 'POST';
+        
+        const response = await fetch(url, {
+            method: method,
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
         });
         
         if (response.ok) {
-            showNotification('SMTP server configuration saved');
+            showNotification(`SMTP server ${isEdit ? 'updated' : 'created'} successfully`);
             document.getElementById('smtpForm').reset();
+            document.getElementById('smtpServerId').value = '';
+            document.getElementById('smtpFormTitle').textContent = 'Add New SMTP Server';
+            document.getElementById('smtpSubmitBtn').textContent = 'Save SMTP Configuration';
+            document.getElementById('cancelEditBtn').style.display = 'none';
+            loadSMTPServers();
         } else {
-            throw new Error('Failed to save SMTP configuration');
+            throw new Error(`Failed to ${isEdit ? 'update' : 'create'} SMTP configuration`);
         }
     } catch (error) {
-        console.error('Error saving SMTP configuration:', error);
-        showNotification('Error saving SMTP configuration', 'error');
+        console.error(`Error ${isEdit ? 'updating' : 'creating'} SMTP configuration:`, error);
+        showNotification(`Error ${isEdit ? 'updating' : 'creating'} SMTP configuration`, 'error');
+    }
+}
+
+async function editSMTPServer(serverId) {
+    try {
+        const response = await fetch(`${API_BASE}/smtp`);
+        const servers = await response.json();
+        const server = servers.find(s => s.id === serverId);
+        
+        if (!server) {
+            showNotification('SMTP server not found', 'error');
+            return;
+        }
+        
+        // Populate form with server data
+        document.getElementById('smtpServerId').value = server.id;
+        document.getElementById('smtpHost').value = server.smtp_host;
+        document.getElementById('smtpPort').value = server.smtp_port;
+        document.getElementById('smtpUsername').value = server.username || '';
+        document.getElementById('smtpPassword').value = ''; // Don't show password
+        document.getElementById('smtpFromAddress').value = server.from_address;
+        document.getElementById('smtpUseSSL').checked = server.use_ssl;
+        document.getElementById('smtpUseTLS').checked = server.use_tls;
+        document.getElementById('smtpIsActive').checked = server.is_active;
+        
+        // Update form title and button
+        document.getElementById('smtpFormTitle').textContent = `Edit SMTP Server: ${server.smtp_host}`;
+        document.getElementById('smtpSubmitBtn').textContent = 'Update SMTP Configuration';
+        document.getElementById('cancelEditBtn').style.display = 'inline-block';
+        
+        // Scroll to form
+        document.getElementById('smtpForm').scrollIntoView({ behavior: 'smooth' });
+        
+    } catch (error) {
+        console.error('Error loading SMTP server for edit:', error);
+        showNotification('Error loading SMTP server', 'error');
+    }
+}
+
+function cancelSMTPServerEdit() {
+    document.getElementById('smtpForm').reset();
+    document.getElementById('smtpServerId').value = '';
+    document.getElementById('smtpFormTitle').textContent = 'Add New SMTP Server';
+    document.getElementById('smtpSubmitBtn').textContent = 'Save SMTP Configuration';
+    document.getElementById('cancelEditBtn').style.display = 'none';
+}
+
+async function deleteSMTPServer(serverId) {
+    if (!confirm('Are you sure you want to delete this SMTP server configuration?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/smtp/${serverId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            showNotification('SMTP server deleted successfully');
+            loadSMTPServers();
+        } else {
+            throw new Error('Failed to delete SMTP server');
+        }
+    } catch (error) {
+        console.error('Error deleting SMTP server:', error);
+        showNotification('Error deleting SMTP server', 'error');
+    }
+}
+
+async function testSMTPServer(serverId) {
+    const testBtn = event.target;
+    const originalText = testBtn.innerHTML;
+    
+    // Disable button and show loading state
+    testBtn.disabled = true;
+    testBtn.innerHTML = '⏳ Testing...';
+    
+    try {
+        // Get recipient email from dropdown
+        const recipientEmail = document.getElementById('testRecipient').value;
+        
+        // Prepare test parameters
+        const params = new URLSearchParams();
+        params.append('smtp_server_id', serverId);
+        if (recipientEmail && recipientEmail.trim()) {
+            params.append('recipient_email', recipientEmail.trim());
+        }
+        
+        // Send test email request
+        const response = await fetch(`${API_BASE}/email/test?${params}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(
+                `✅ Test email sent successfully to ${result.recipient_email}! ` +
+                `Execution time: ${result.execution_time.toFixed(2)}s`, 
+                'success'
+            );
+        } else {
+            showNotification(
+                `❌ Test email failed: ${result.error}`, 
+                'error'
+            );
+        }
+        
+        // Log detailed result to console for debugging
+        console.log('Test email result:', result);
+        
+    } catch (error) {
+        console.error('Error testing SMTP server:', error);
+        showNotification('Error testing SMTP server: ' + error.message, 'error');
+    } finally {
+        // Re-enable button
+        testBtn.disabled = false;
+        testBtn.innerHTML = originalText;
+    }
+}
+
+// Auto-configure SSL/TLS based on port
+function configureSSLTLSSettings() {
+    const port = parseInt(document.getElementById('smtpPort').value);
+    const sslCheckbox = document.getElementById('smtpUseSSL');
+    const tlsCheckbox = document.getElementById('smtpUseTLS');
+    
+    if (port === 465) {
+        // Port 465 uses SSL
+        sslCheckbox.checked = true;
+        tlsCheckbox.checked = false;
+    } else if (port === 587) {
+        // Port 587 uses TLS/STARTTLS
+        sslCheckbox.checked = false;
+        tlsCheckbox.checked = true;
+    } else if (port === 25) {
+        // Port 25 usually no encryption
+        sslCheckbox.checked = false;
+        tlsCheckbox.checked = false;
+    }
+}
+
+// Add event listener to port field
+document.addEventListener('DOMContentLoaded', function() {
+    const portField = document.getElementById('smtpPort');
+    if (portField) {
+        portField.addEventListener('change', configureSSLTLSSettings);
+        portField.addEventListener('input', configureSSLTLSSettings);
+    }
+});
+
+async function testSMTPConfiguration() {
+    const testBtn = document.getElementById('testEmailBtn');
+    const originalText = testBtn.innerHTML;
+    
+    // Disable button and show loading state
+    testBtn.disabled = true;
+    testBtn.innerHTML = '⏳ Testing...';
+    
+    try {
+        // Get recipient email from dropdown
+        const recipientEmail = document.getElementById('testRecipient').value;
+        
+        // Prepare test parameters
+        const params = new URLSearchParams();
+        if (recipientEmail && recipientEmail.trim()) {
+            params.append('recipient_email', recipientEmail.trim());
+        }
+        
+        // Send test email request
+        const response = await fetch(`${API_BASE}/email/test?${params}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(
+                `✅ Test email sent successfully to ${result.recipient_email}! ` +
+                `Execution time: ${result.execution_time.toFixed(2)}s`, 
+                'success'
+            );
+        } else {
+            showNotification(
+                `❌ Test email failed: ${result.error}`, 
+                'error'
+            );
+        }
+        
+        // Log detailed result to console for debugging
+        console.log('Test email result:', result);
+        
+    } catch (error) {
+        console.error('Error testing SMTP configuration:', error);
+        showNotification('Error testing SMTP configuration: ' + error.message, 'error');
+    } finally {
+        // Re-enable button
+        testBtn.disabled = false;
+        testBtn.innerHTML = originalText;
     }
 }
 
@@ -1436,10 +1878,31 @@ async function loadRecipients() {
             </div>
         `).join('');
         
+        // Also populate the test recipient dropdown
+        populateTestRecipientDropdown(recipients);
+        
     } catch (error) {
         console.error('Error loading recipients:', error);
         showNotification('Error loading recipients', 'error');
     }
+}
+
+function populateTestRecipientDropdown(recipients) {
+    const dropdown = document.getElementById('testRecipient');
+    if (!dropdown) return;
+    
+    // Clear existing options except the first one
+    dropdown.innerHTML = '<option value="">Use first enabled recipient</option>';
+    
+    // Add enabled recipients to dropdown
+    recipients
+        .filter(rec => rec.enabled)
+        .forEach(rec => {
+            const option = document.createElement('option');
+            option.value = rec.email_address;
+            option.textContent = `${rec.email_address}${rec.name ? ` (${rec.name})` : ''}`;
+            dropdown.appendChild(option);
+        });
 }
 
 async function addRecipient(event) {
@@ -1462,7 +1925,7 @@ async function addRecipient(event) {
         if (response.ok) {
             showNotification('Recipient added successfully');
             document.getElementById('recipientForm').reset();
-            loadRecipients();
+            loadRecipients(); // This will also update the test recipient dropdown
         } else {
             throw new Error('Failed to add recipient');
         }
@@ -1499,19 +1962,34 @@ async function loadLogs() {
         
         const viewer = document.getElementById('logViewer');
         if (logs.length === 0) {
-            viewer.innerHTML = '<div class="empty-state">No logs available</div>';
+            viewer.innerHTML = '<div class="empty-state">No script execution logs available</div>';
             return;
         }
         
-        viewer.innerHTML = logs.map(log => `
-            <div class="log-entry">
-                <span class="log-timestamp">${log.timestamp}</span>
-                <span class="log-status badge ${getLogStatusClass(log.status)}">${log.status || log.event}</span>
-                ${log.job_id ? `<div>Job ID: ${log.job_id}</div>` : ''}
-                ${log.exit_code !== undefined ? `<div>Exit Code: ${log.exit_code}</div>` : ''}
-                ${log.error_message ? `<div style="color: #d9534f;">Error: ${log.error_message}</div>` : ''}
+        viewer.innerHTML = `
+            <div class="logs-container">
+                <h3>Recent Script Execution Logs</h3>
+                <div class="logs-list">
+                    ${logs.map(log => `
+                        <div class="log-entry">
+                            <div class="log-header">
+                                <span class="log-timestamp">${new Date(log.timestamp).toLocaleString()}</span>
+                                <span class="log-status badge ${getLogStatusClass(log.status)}">${log.status || log.event}</span>
+                            </div>
+                            <div class="log-details">
+                                ${log.job_id ? `<div class="log-detail"><strong>Job ID:</strong> ${log.job_id}</div>` : ''}
+                                ${log.exit_code !== undefined ? `<div class="log-detail"><strong>Exit Code:</strong> ${log.exit_code}</div>` : ''}
+                                ${log.execution_time ? `<div class="log-detail"><strong>Execution Time:</strong> ${log.execution_time}s</div>` : ''}
+                                ${log.retry_count ? `<div class="log-detail"><strong>Retry Count:</strong> ${log.retry_count}</div>` : ''}
+                                ${log.error_message ? `<div class="log-detail error"><strong>Error:</strong> ${log.error_message}</div>` : ''}
+                                ${log.stdout_size ? `<div class="log-detail"><strong>Output Size:</strong> ${log.stdout_size} bytes</div>` : ''}
+                                ${log.stderr_size ? `<div class="log-detail"><strong>Error Output Size:</strong> ${log.stderr_size} bytes</div>` : ''}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
             </div>
-        `).join('');
+        `;
         
     } catch (error) {
         console.error('Error loading logs:', error);
@@ -1523,10 +2001,87 @@ async function loadLogFiles() {
     try {
         const response = await fetch(`${API_BASE}/logs/files`);
         const data = await response.json();
-        alert(`Log Files:\n${data.files.join('\n')}`);
+        
+        const logViewer = document.getElementById('logViewer');
+        
+        if (data.all && data.all.length > 0) {
+            logViewer.innerHTML = `
+                <div class="log-files-container">
+                    <h3>Available Log Files</h3>
+                    <div class="log-files-grid">
+                        ${data.script_execution.map(file => `
+                            <div class="log-file-card">
+                                <div class="log-file-header">
+                                    <h4>📄 ${file.name}</h4>
+                                    <span class="log-file-type">Script Execution</span>
+                                </div>
+                                <div class="log-file-actions">
+                                    <button class="btn-primary" onclick="viewLogFile('${file.name}', 'script_execution')">View Content</button>
+                                    <button class="btn-ghost" onclick="downloadLogFile('${file.path}')">Download</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                        ${data.monitoring.map(file => `
+                            <div class="log-file-card">
+                                <div class="log-file-header">
+                                    <h4>📊 ${file.name}</h4>
+                                    <span class="log-file-type">Monitoring</span>
+                                </div>
+                                <div class="log-file-actions">
+                                    <button class="btn-primary" onclick="viewLogFile('${file.name}', 'monitoring')">View Content</button>
+                                    <button class="btn-ghost" onclick="downloadLogFile('${file.path}')">Download</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        } else {
+            logViewer.innerHTML = '<div class="empty-state">No log files available</div>';
+        }
     } catch (error) {
         console.error('Error loading log files:', error);
+        showNotification('Error loading log files', 'error');
     }
+}
+
+async function viewLogFile(filename, type) {
+    try {
+        const response = await fetch(`${API_BASE}/logs/file/${type}/${filename}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        
+        const logViewer = document.getElementById('logViewer');
+        logViewer.innerHTML = `
+            <div class="log-file-viewer">
+                <div class="log-file-header">
+                    <h3>📄 ${filename}</h3>
+                    <div class="log-file-controls">
+                        <button class="btn-ghost" onclick="loadLogFiles()">← Back to Files</button>
+                        <button class="btn-primary" onclick="downloadLogFile('${data.path}')">Download</button>
+                    </div>
+                </div>
+                <div class="log-content">
+                    <pre class="log-content-text">${data.content}</pre>
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Error viewing log file:', error);
+        showNotification('Error loading log file content', 'error');
+    }
+}
+
+function downloadLogFile(filePath) {
+    // Create a temporary link to download the file
+    const link = document.createElement('a');
+    link.href = `${API_BASE}/logs/download?path=${encodeURIComponent(filePath)}`;
+    link.download = filePath.split('/').pop();
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 function getLogStatusClass(status) {

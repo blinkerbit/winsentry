@@ -257,10 +257,22 @@
 
             <!-- Alerts Tab -->
             <div id="alerts" class="tab-pane">
-                <h2>Alert Configuration</h2>
-                <p class="info-text">Configure email alerts for your monitors. Set up SMTP server and email templates in the Settings tab.</p>
+                <div class="section-header">
+                    <div>
+                        <h2>Alert Configuration</h2>
+                        <p class="section-description">Configure email alerts for your monitors. Set up SMTP server and email templates in the Settings tab.</p>
+                    </div>
+                    <div class="section-actions">
+                        <button class="btn-primary" onclick="openAlertModal()">➕ Add Alert Rule</button>
+                        <button class="btn-secondary" onclick="autoCreateAlerts()">🔧 Auto-Create Alerts</button>
+                        <button class="btn-ghost" onclick="loadAlerts()">⟳ Refresh</button>
+                    </div>
+                </div>
                 <div class="monitors-list">
-                    <h3>Alert Rules</h3>
+                    <div class="list-header">
+                        <h3>Alert Rules</h3>
+                        <p class="list-subtitle">Configure when and how to receive alerts for your monitors.</p>
+                    </div>
                     <div id="alertsList"></div>
                 </div>
             </div>
@@ -271,43 +283,84 @@
                 
                 <div class="config-section">
                     <h3>SMTP Server Configuration</h3>
-                    <form id="smtpForm" class="config-form" onsubmit="addSMTPServer(event)">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="smtpHost">SMTP Host *</label>
-                                <input type="text" id="smtpHost" required placeholder="smtp.gmail.com">
+                    
+                    <!-- Existing SMTP Servers List -->
+                    <div class="existing-configs">
+                        <h4>Existing SMTP Servers</h4>
+                        <div id="smtpServersList" class="configs-list">
+                            <div class="empty-state">Loading SMTP servers...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Add/Edit SMTP Server Form -->
+                    <div class="config-form-section">
+                        <h4 id="smtpFormTitle">Add New SMTP Server</h4>
+                        <form id="smtpForm" class="config-form" onsubmit="saveSMTPServer(event)">
+                            <input type="hidden" id="smtpServerId" value="">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="smtpHost">SMTP Host *</label>
+                                    <input type="text" id="smtpHost" required placeholder="smtp.gmail.com">
+                                </div>
+                                <div class="form-group">
+                                    <label for="smtpPort">SMTP Port</label>
+                                    <input type="number" id="smtpPort" value="587" min="1" max="65535">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="smtpUsername">Username</label>
+                                    <input type="text" id="smtpUsername">
+                                </div>
+                                <div class="form-group">
+                                    <label for="smtpPassword">Password</label>
+                                    <input type="password" id="smtpPassword">
+                                </div>
                             </div>
                             <div class="form-group">
-                                <label for="smtpPort">SMTP Port</label>
-                                <input type="number" id="smtpPort" value="587" min="1" max="65535">
+                                <label for="smtpFromAddress">From Email Address *</label>
+                                <input type="email" id="smtpFromAddress" required placeholder="alerts@example.com">
                             </div>
-                        </div>
-                        <div class="form-row">
+                            <div class="form-row checkbox-row">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="smtpUseSSL" checked>
+                                    Use SSL (Port 465 only)
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="smtpUseTLS" checked>
+                                    Use TLS/STARTTLS (Port 587 recommended)
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="smtpIsActive" checked>
+                                    Active
+                                </label>
+                            </div>
+                            <div class="form-help">
+                                <p><strong>SSL/TLS Configuration Help:</strong></p>
+                                <ul>
+                                    <li><strong>Gmail:</strong> Port 587, TLS only (uncheck SSL)</li>
+                                    <li><strong>Outlook/Hotmail:</strong> Port 587, TLS only (uncheck SSL)</li>
+                                    <li><strong>Yahoo:</strong> Port 587, TLS only (uncheck SSL)</li>
+                                    <li><strong>Custom servers:</strong> Check with your provider</li>
+                                </ul>
+                            </div>
                             <div class="form-group">
-                                <label for="smtpUsername">Username</label>
-                                <input type="text" id="smtpUsername">
+                                <label for="testRecipient">Test Email Recipient (optional)</label>
+                                <select id="testRecipient">
+                                    <option value="">Use first enabled recipient</option>
+                                </select>
                             </div>
-                            <div class="form-group">
-                                <label for="smtpPassword">Password</label>
-                                <input type="password" id="smtpPassword">
+                            <div class="form-actions">
+                                <button type="submit" id="smtpSubmitBtn">Save SMTP Configuration</button>
+                                <button type="button" id="testEmailBtn" onclick="testSMTPConfiguration()" class="btn-secondary">
+                                    📧 Test Email
+                                </button>
+                                <button type="button" id="cancelEditBtn" onclick="cancelSMTPServerEdit()" class="btn-ghost" style="display: none;">
+                                    Cancel Edit
+                                </button>
                             </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="smtpFromAddress">From Email Address *</label>
-                            <input type="email" id="smtpFromAddress" required placeholder="alerts@example.com">
-                        </div>
-                        <div class="form-row checkbox-row">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="smtpUseSSL" checked>
-                                Use SSL
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="smtpUseTLS" checked>
-                                Use TLS
-                            </label>
-                        </div>
-                        <button type="submit">Save SMTP Configuration</button>
-                    </form>
+                        </form>
+                    </div>
                 </div>
                 
                 <div class="config-section">
@@ -331,10 +384,15 @@
 
             <!-- Logs Tab -->
             <div id="logs" class="tab-pane">
-                <h2>Execution Logs</h2>
-                <div class="log-controls">
-                    <button onclick="loadLogs()">Refresh Logs</button>
-                    <button onclick="loadLogFiles()">Show Log Files</button>
+                <div class="section-header">
+                    <div>
+                        <h2>Execution Logs</h2>
+                        <p class="section-description">View script execution logs and log files.</p>
+                    </div>
+                    <div class="section-actions">
+                        <button class="btn-primary" onclick="loadLogs()">📋 Script Logs</button>
+                        <button class="btn-ghost" onclick="loadLogFiles()">📁 Log Files</button>
+                    </div>
                 </div>
                 <div class="log-viewer" id="logViewer"></div>
             </div>
@@ -525,6 +583,66 @@
                     <div class="modal-footer">
                         <button type="button" class="btn-secondary" onclick="closeProcessModal()">Cancel</button>
                         <button type="submit" id="processFormSubmit">Add Process Monitor</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Rule Modal -->
+    <div id="alertModal" class="modal" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="alertModalTitle">
+            <div class="modal-header">
+                <h3 id="alertModalTitle">Add Alert Rule</h3>
+                <button class="modal-close" onclick="closeAlertModal()" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="alertForm" class="config-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="alertMonitorType">Monitor Type *</label>
+                            <select id="alertMonitorType" required onchange="updateAlertMonitorOptions()">
+                                <option value="">Select monitor type...</option>
+                                <option value="port">Port Monitor</option>
+                                <option value="process">Process Monitor</option>
+                                <option value="service">Service Monitor</option>
+                                <option value="system">System Monitor</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="alertMonitorId">Monitor ID *</label>
+                            <select id="alertMonitorId" required>
+                                <option value="">Select monitor...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="alertCondition">Alert Condition *</label>
+                            <select id="alertCondition" required onchange="updateAlertConditionFields()">
+                                <option value="">Select condition...</option>
+                                <option value="status_change">Status Change</option>
+                                <option value="duration">Duration</option>
+                                <option value="threshold">Threshold</option>
+                                <option value="recurring">Recurring</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="alertConditionValueGroup" style="display: none;">
+                            <label for="alertConditionValue">Condition Value</label>
+                            <input type="text" id="alertConditionValue" placeholder="JSON format for condition parameters">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="alertRecipients">Email Recipients *</label>
+                            <select id="alertRecipients" multiple required>
+                                <!-- Will be populated by JavaScript -->
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-secondary" onclick="closeAlertModal()">Cancel</button>
+                        <button type="submit" id="alertFormSubmit">Add Alert Rule</button>
                     </div>
                 </form>
             </div>
