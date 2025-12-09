@@ -28,6 +28,22 @@ class ServiceConfig:
     last_check: Optional[datetime] = None
     last_status: bool = False
     failure_count: int = 0
+    
+    # Auto-restart configuration
+    auto_restart_enabled: bool = True  # Enable auto-restart when service stops
+    max_restart_attempts: int = 3  # Maximum restart attempts before giving up
+    restart_delay: int = 5  # Delay between restart attempts in seconds
+    restart_count: int = 0  # Current restart attempt counter
+    last_restart_attempt: Optional[datetime] = None
+    restart_failed: bool = False  # All restart attempts exhausted
+    
+    # Alert configuration
+    email_recipients: Optional[str] = None  # Comma-separated email addresses
+    alert_on_stopped: bool = True  # Alert when service stops
+    alert_on_started: bool = False  # Alert when service starts
+    alert_on_restart_success: bool = True  # Alert when restart succeeds
+    alert_on_restart_failed: bool = True  # Alert when all restart attempts fail
+
 
 
 class ServiceMonitor:
@@ -61,7 +77,18 @@ class ServiceMonitor:
         except Exception as e:
             self.logger.error(f"Failed to load service configurations: {e}")
         
-    async def add_service(self, service_name: str, interval: int = 30, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None) -> bool:
+    async def add_service(self, service_name: str, interval: int = 30, 
+                          powershell_script: Optional[str] = None, 
+                          powershell_commands: Optional[str] = None,
+                          enabled: bool = True,
+                          auto_restart_enabled: bool = True,
+                          max_restart_attempts: int = 3,
+                          restart_delay: int = 5,
+                          email_recipients: str = '',
+                          alert_on_stopped: bool = True,
+                          alert_on_started: bool = False,
+                          alert_on_restart_success: bool = True,
+                          alert_on_restart_failed: bool = True) -> bool:
         """Add a service to monitor"""
         try:
             # Validate PowerShell script path if provided
@@ -70,7 +97,7 @@ class ServiceMonitor:
                     return False
             
             # Save to database first
-            if not self.db.save_service_config(service_name, interval, powershell_script, powershell_commands, True):
+            if not self.db.save_service_config(service_name, interval, powershell_script, powershell_commands, enabled):
                 return False
             
             config = ServiceConfig(
@@ -78,12 +105,24 @@ class ServiceMonitor:
                 interval=interval,
                 powershell_script=powershell_script,
                 powershell_commands=powershell_commands,
-                enabled=True
+                enabled=enabled,
+                auto_restart_enabled=auto_restart_enabled,
+                max_restart_attempts=max_restart_attempts,
+                restart_delay=restart_delay,
+                email_recipients=email_recipients,
+                alert_on_stopped=alert_on_stopped,
+                alert_on_started=alert_on_started,
+                alert_on_restart_success=alert_on_restart_success,
+                alert_on_restart_failed=alert_on_restart_failed
             )
             self.monitored_services[service_name] = config
             self.logger.info(f"Added service {service_name} to monitoring with interval {interval}s")
+            if auto_restart_enabled:
+                self.logger.info(f"Auto-restart enabled: max {max_restart_attempts} attempts, {restart_delay}s delay")
             if powershell_script:
                 self.logger.info(f"PowerShell recovery script configured: {powershell_script}")
+            if email_recipients:
+                self.logger.info(f"Email alerts configured for: {email_recipients}")
             return True
         except Exception as e:
             self.logger.error(f"Failed to add service {service_name}: {e}")
@@ -372,7 +411,7 @@ $env:PYTHONUTF8 = "1"
             }
     
     async def check_service(self, service_name: str) -> bool:
-        """Check if a specific service is running"""
+        """Check if a specific service is running and attempt restart if stopped"""
         config = self.monitored_services.get(service_name)
         if not config or not config.enabled:
             return True
@@ -388,7 +427,20 @@ $env:PYTHONUTF8 = "1"
             self.logger.warning(f"Service {service_name} is not running (failure #{config.failure_count})")
             
             # Log to database
-            self.db.log_service_check(service_name, "STOPPED", config.failure_count, f"Service {service_name} is stopped (failure #{config.failure_count})")
+            self.db.log_service_check(service_name, "STOPPED", config.failure_count, 
+                                      f"Service {service_name} is stopped (failure #{config.failure_count})")
+            
+            # Attempt automatic restart if enabled and not already exhausted retry limit
+            if (config.auto_restart_enabled and 
+                not config.restart_failed and 
+                config.restart_count < config.max_restart_attempts):
+                restart_success = await self._attempt_service_restart(service_name)
+                if restart_success:
+                    # Service restarted successfully
+                    config.failure_count = 0
+                    config.restart_count = 0
+                    config.last_status = True
+                    return True
             
             # Get email configuration for this service
             email_config = self.email_alert.get_service_email_config(service_name)
@@ -419,7 +471,9 @@ $env:PYTHONUTF8 = "1"
                         template_name=email_config.get("template", "default"),
                         custom_data={
                             "failure_count": config.failure_count,
-                            "message": f"Service {service_name} has been stopped for {config.failure_count} consecutive checks"
+                            "restart_attempts": config.restart_count,
+                            "max_restart_attempts": config.max_restart_attempts,
+                            "message": f"Service {service_name} has been stopped for {config.failure_count} consecutive checks. Restart attempts: {config.restart_count}/{config.max_restart_attempts}"
                         }
                     )
                     config.last_email_sent = datetime.now()
@@ -431,13 +485,137 @@ $env:PYTHONUTF8 = "1"
                 # Reset email sent flag
                 if hasattr(config, 'last_email_sent'):
                     delattr(config, 'last_email_sent')
-                    
+            
+            # Reset all failure and restart counters
             config.failure_count = 0
+            config.restart_count = 0
+            config.restart_failed = False
             
             # Check resource thresholds if service is running
             await self._check_service_resources(service_name)
         
         return is_running
+    
+    async def _attempt_service_restart(self, service_name: str) -> bool:
+        """Attempt to restart a Windows service with retry logic using pywin32"""
+        config = self.monitored_services.get(service_name)
+        if not config:
+            return False
+        
+        config.restart_count += 1
+        config.last_restart_attempt = datetime.now()
+        
+        self.logger.info(f"Attempting to restart service {service_name} (attempt {config.restart_count}/{config.max_restart_attempts})")
+        
+        # Log restart attempt
+        self.db.log_service_check(service_name, "RESTARTING", config.restart_count,
+                                  f"Restart attempt {config.restart_count}/{config.max_restart_attempts}")
+        
+        try:
+            import win32serviceutil
+            import win32service
+            
+            # Start the service using pywin32 in executor to avoid blocking
+            def start_service_sync():
+                try:
+                    # Check current state first
+                    status = win32serviceutil.QueryServiceStatus(service_name)
+                    current_state = status[1]
+                    
+                    if current_state == win32service.SERVICE_RUNNING:
+                        return True  # Already running
+                    
+                    if current_state == win32service.SERVICE_STOPPED:
+                        # Start the service
+                        win32serviceutil.StartService(service_name)
+                        return True
+                    elif current_state == win32service.SERVICE_PAUSED:
+                        # Resume paused service
+                        win32serviceutil.ControlService(service_name, win32service.SERVICE_CONTROL_CONTINUE)
+                        return True
+                    else:
+                        # Service is in a pending state, wait a bit
+                        return False
+                except Exception as e:
+                    self.logger.error(f"pywin32 StartService error: {e}")
+                    return False
+            
+            # Run in executor to avoid blocking the event loop
+            loop = asyncio.get_event_loop()
+            start_result = await loop.run_in_executor(None, start_service_sync)
+            
+            if not start_result:
+                self.logger.warning(f"Failed to initiate start for service {service_name}")
+            
+            # Wait for service to start
+            await asyncio.sleep(config.restart_delay)
+            
+            # Check if service is now running
+            is_running = await self.is_service_running(service_name)
+            
+            if is_running:
+                self.logger.info(f"Service {service_name} restarted successfully on attempt {config.restart_count}")
+                
+                # Log success
+                self.db.log_service_check(service_name, "RESTARTED", config.restart_count,
+                                          f"Service restarted successfully on attempt {config.restart_count}")
+                
+                # Send success email
+                await self._send_restart_notification(service_name, True, config.restart_count)
+                
+                return True
+            else:
+                self.logger.warning(f"Service {service_name} restart attempt {config.restart_count} failed")
+                
+                # Check if we've exhausted all attempts
+                if config.restart_count >= config.max_restart_attempts:
+                    config.restart_failed = True
+                    self.logger.error(f"All {config.max_restart_attempts} restart attempts failed for service {service_name}")
+                    
+                    # Log final failure
+                    self.db.log_service_check(service_name, "RESTART_FAILED", config.restart_count,
+                                              f"All {config.max_restart_attempts} restart attempts failed")
+                    
+                    # Send failure email
+                    await self._send_restart_notification(service_name, False, config.restart_count)
+                
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error restarting service {service_name}: {e}")
+            return False
+    
+    async def _send_restart_notification(self, service_name: str, success: bool, attempts: int):
+        """Send email notification about service restart attempt"""
+        config = self.monitored_services.get(service_name)
+        if not config:
+            return
+        
+        email_config = self.email_alert.get_service_email_config(service_name)
+        if not email_config.get("enabled", False) or not email_config.get("recipients"):
+            return
+        
+        try:
+            status = "SUCCESS" if success else "FAILED"
+            
+            await self.email_alert.send_service_alert_email(
+                service_name=service_name,
+                recipients=email_config["recipients"],
+                template_name=email_config.get("template", "service_default"),
+                custom_data={
+                    "failure_count": config.failure_count,
+                    "restart_attempts": attempts,
+                    "max_restart_attempts": config.max_restart_attempts,
+                    "restart_success": success,
+                    "message": f"Service {service_name} restart {status}. Attempts: {attempts}/{config.max_restart_attempts}",
+                    "alert_type": "service_restart"
+                }
+            )
+            
+            self.logger.info(f"Restart notification sent for service {service_name}: {status}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to send restart notification for {service_name}: {e}")
     
     async def _check_service_resources(self, service_name: str):
         """Check resource usage for processes of a service"""
@@ -512,42 +690,49 @@ $env:PYTHONUTF8 = "1"
                 await asyncio.sleep(5)  # Wait before retrying
     
     def get_monitored_services(self) -> List[Dict]:
-        """Get list of monitored services with their status"""
+        """Get list of monitored services with their current status"""
         services = []
         for service_name, config in self.monitored_services.items():
-            # Format last check timestamp for display
-            last_check_display = None
-            if config.last_check:
-                # Show relative time (e.g., "2 minutes ago") and absolute time
-                from datetime import datetime, timezone
-                now = datetime.now()
+            # Fetch live current status for this service
+            current_status = None
+            is_running = None
+            
+            try:
+                import subprocess
+                # Quick check of current service status
+                result = subprocess.run(
+                    ['sc', 'query', service_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
                 
-                # Ensure both timestamps are in the same timezone (local time)
-                if config.last_check.tzinfo is None:
-                    # If no timezone info, assume local time
-                    last_check_local = config.last_check
+                if result.returncode == 0:
+                    output = result.stdout.upper()
+                    if 'RUNNING' in output:
+                        is_running = True
+                        current_status = 'running'
+                    elif 'STOPPED' in output:
+                        is_running = False
+                        current_status = 'stopped'
+                    elif 'PAUSED' in output:
+                        is_running = False
+                        current_status = 'paused'
+                    else:
+                        is_running = None
+                        current_status = 'unknown'
                 else:
-                    # Convert to local time
-                    last_check_local = config.last_check.astimezone()
+                    is_running = None
+                    current_status = 'not_found'
+                    
+                # Update cached status
+                config.last_status = is_running
+                config.last_check = datetime.now()
                 
-                time_diff = now - last_check_local
-                time_diff_seconds = time_diff.total_seconds()
-                
-                # Handle negative time differences (future timestamps)
-                if time_diff_seconds < 0:
-                    last_check_display = "Future timestamp"
-                elif time_diff_seconds < 60:
-                    last_check_display = f"{int(time_diff_seconds)}s ago"
-                elif time_diff_seconds < 3600:
-                    last_check_display = f"{int(time_diff_seconds/60)}m ago"
-                elif time_diff_seconds < 86400:
-                    last_check_display = f"{int(time_diff_seconds/3600)}h ago"
-                else:
-                    last_check_display = f"{int(time_diff_seconds/86400)}d ago"
-                
-                # Also include the full timestamp
-                full_timestamp = last_check_local.strftime("%Y-%m-%d %H:%M:%S")
-                last_check_display = f"{last_check_display} ({full_timestamp})"
+            except Exception as e:
+                self.logger.error(f"Error getting status for {service_name}: {e}")
+                is_running = config.last_status
+                current_status = 'running' if is_running else 'stopped' if is_running is False else 'unknown'
             
             services.append({
                 'service_name': service_name,
@@ -555,10 +740,10 @@ $env:PYTHONUTF8 = "1"
                 'powershell_script': config.powershell_script,
                 'enabled': config.enabled,
                 'last_check': config.last_check.isoformat() if config.last_check else None,
-                'last_check_display': last_check_display,
-                'last_status': config.last_status,
+                'last_status': is_running,
+                'status': current_status,
                 'failure_count': config.failure_count,
-                'is_running': config.last_status if config.last_check else None
+                'is_running': is_running
             })
         return services
     
@@ -736,6 +921,44 @@ $env:PYTHONUTF8 = "1"
         except Exception as e:
             self.logger.error(f"Failed to send service resource alert email: {e}")
     
+    async def get_service_processes(self, service_name: str) -> List[Dict]:
+        """Get processes associated with a service"""
+        try:
+            import psutil
+            
+            processes = []
+            
+            # Get all running processes
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'username', 'cpu_percent', 'memory_percent', 'memory_info']):
+                try:
+                    proc_info = proc.info
+                    
+                    # Check if this process is related to the service
+                    # This is a simplified check - in a real implementation, you'd use WMI or other methods
+                    # to get the actual service-process relationship
+                    if (service_name.lower() in proc_info['name'].lower() or 
+                        (proc_info['cmdline'] and service_name.lower() in ' '.join(proc_info['cmdline']).lower())):
+                        
+                        processes.append({
+                            'pid': proc_info['pid'],
+                            'name': proc_info['name'],
+                            'cmdline': ' '.join(proc_info['cmdline']) if proc_info['cmdline'] else None,
+                            'username': proc_info['username'],
+                            'cpu_percent': proc_info['cpu_percent'] or 0.0,
+                            'memory_percent': proc_info['memory_percent'] or 0.0,
+                            'memory_info': proc_info['memory_info'].rss if proc_info['memory_info'] else 0,
+                            'memory_rss': proc_info['memory_info'].rss if proc_info['memory_info'] else 0
+                        })
+                        
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+            
+            return processes
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get processes for service {service_name}: {e}")
+            return []
+
     async def get_service_resource_summary(self, service_name: str) -> Dict:
         """Get comprehensive resource summary for a service"""
         try:
@@ -750,10 +973,9 @@ $env:PYTHONUTF8 = "1"
             return {
                 'service_name': service_name,
                 'process_count': len(processes),
-                'total_cpu_percent': round(total_cpu, 2),
-                'total_memory_percent': round(total_memory, 2),
-                'total_memory_rss_bytes': total_memory_rss,
-                'total_memory_rss_mb': round(total_memory_rss / (1024 * 1024), 2),
+                'total_cpu': round(total_cpu, 2),
+                'total_ram': round(total_memory, 2),
+                'total_memory': total_memory_rss,
                 'processes': processes,
                 'thresholds': thresholds,
                 'timestamp': datetime.now().isoformat()

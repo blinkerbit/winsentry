@@ -108,6 +108,21 @@ class Database:
                     )
                 ''')
                 
+                # Create real-time port status table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS port_status (
+                        port INTEGER PRIMARY KEY,
+                        status TEXT NOT NULL,
+                        last_check TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        failure_count INTEGER DEFAULT 0,
+                        last_status_change TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        uptime_seconds INTEGER DEFAULT 0,
+                        total_checks INTEGER DEFAULT 0,
+                        successful_checks INTEGER DEFAULT 0,
+                        FOREIGN KEY (port) REFERENCES port_configs (port)
+                    )
+                ''')
+                
                 # Create service resource thresholds table
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS service_thresholds (
@@ -277,6 +292,115 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to log port check: {e}")
             return False
+    
+    def update_port_status(self, port: int, status: str, failure_count: int = 0) -> bool:
+        """Update real-time port status in database"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if port status record exists
+                cursor.execute('SELECT status, last_status_change FROM port_status WHERE port = ?', (port,))
+                existing = cursor.fetchone()
+                
+                current_time = datetime.now().isoformat()
+                status_changed = False
+                
+                if existing:
+                    old_status = existing[0]
+                    last_change = existing[1]
+                    status_changed = (old_status != status)
+                    
+                    if status_changed:
+                        # Update with status change
+                        cursor.execute('''
+                            UPDATE port_status 
+                            SET status = ?, last_check = ?, failure_count = ?, 
+                                last_status_change = ?, total_checks = total_checks + 1,
+                                successful_checks = CASE WHEN ? = 'ONLINE' THEN successful_checks + 1 ELSE successful_checks END
+                            WHERE port = ?
+                        ''', (status, current_time, failure_count, current_time, status, port))
+                    else:
+                        # Update without status change
+                        cursor.execute('''
+                            UPDATE port_status 
+                            SET last_check = ?, failure_count = ?, total_checks = total_checks + 1,
+                                successful_checks = CASE WHEN ? = 'ONLINE' THEN successful_checks + 1 ELSE successful_checks END
+                            WHERE port = ?
+                        ''', (current_time, failure_count, status, port))
+                else:
+                    # Insert new port status record
+                    cursor.execute('''
+                        INSERT INTO port_status (port, status, last_check, failure_count, 
+                                               last_status_change, total_checks, successful_checks)
+                        VALUES (?, ?, ?, ?, ?, 1, ?)
+                    ''', (port, status, current_time, failure_count, current_time, 1 if status == 'ONLINE' else 0))
+                    status_changed = True
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to update port status: {e}")
+            return False
+    
+    def get_port_status(self, port: Optional[int] = None) -> List[Dict]:
+        """Get real-time port status from database"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                if port:
+                    cursor.execute('''
+                        SELECT ps.*, pc.interval_seconds, pc.enabled
+                        FROM port_status ps
+                        JOIN port_configs pc ON ps.port = pc.port
+                        WHERE ps.port = ?
+                    ''', (port,))
+                else:
+                    cursor.execute('''
+                        SELECT ps.*, pc.interval_seconds, pc.enabled
+                        FROM port_status ps
+                        JOIN port_configs pc ON ps.port = pc.port
+                        ORDER BY ps.port
+                    ''')
+                
+                status_list = []
+                for row in cursor.fetchall():
+                    # Calculate uptime if port is online
+                    uptime_seconds = 0
+                    if row['status'] == 'ONLINE' and row['last_status_change']:
+                        try:
+                            last_change = datetime.fromisoformat(row['last_status_change'])
+                            uptime_seconds = int((datetime.now() - last_change).total_seconds())
+                        except:
+                            uptime_seconds = 0
+                    
+                    # Calculate success rate
+                    success_rate = 0
+                    if row['total_checks'] > 0:
+                        success_rate = (row['successful_checks'] / row['total_checks']) * 100
+                    
+                    status_list.append({
+                        'port': row['port'],
+                        'status': row['status'].lower(),
+                        'last_check': row['last_check'],
+                        'failure_count': row['failure_count'],
+                        'last_status_change': row['last_status_change'],
+                        'uptime_seconds': uptime_seconds,
+                        'total_checks': row['total_checks'],
+                        'successful_checks': row['successful_checks'],
+                        'success_rate': round(success_rate, 2),
+                        'interval': row['interval_seconds'],
+                        'enabled': bool(row['enabled'])
+                    })
+                
+                return status_list
+                
+        except Exception as e:
+            logger.error(f"Failed to get port status: {e}")
+            return []
     
     def get_port_logs(self, port: Optional[int] = None, limit: int = 100) -> List[Dict]:
         """Get port monitoring logs"""
@@ -743,6 +867,41 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to get service thresholds: {e}")
             return None
+    
+    def get_all_service_thresholds(self) -> List[Dict]:
+        """Get all service resource thresholds with current resource usage"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT service_name, cpu_threshold, ram_threshold, email_alerts_enabled, created_at, updated_at
+                    FROM service_thresholds
+                    ORDER BY service_name
+                ''')
+                
+                thresholds = []
+                for row in cursor.fetchall():
+                    # Get current resource usage for this service
+                    # This is a simplified version - in a real implementation, you'd get actual current usage
+                    thresholds.append({
+                        'service_name': row['service_name'],
+                        'cpu_threshold': row['cpu_threshold'],
+                        'ram_threshold': row['ram_threshold'],
+                        'email_alerts_enabled': bool(row['email_alerts_enabled']),
+                        'current_cpu': 0.0,  # Placeholder - would be populated with actual current usage
+                        'current_ram': 0.0,  # Placeholder - would be populated with actual current usage
+                        'created_at': row['created_at'],
+                        'updated_at': row['updated_at'],
+                        'last_updated': row['updated_at']
+                    })
+                
+                return thresholds
+                
+        except Exception as e:
+            logger.error(f"Failed to get all service thresholds: {e}")
+            return []
     
     def delete_service_thresholds(self, service_name: str) -> bool:
         """Delete service resource thresholds"""

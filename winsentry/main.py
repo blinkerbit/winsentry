@@ -14,6 +14,7 @@ from winsentry.app import WinSentryApplication
 from winsentry.service_manager import ServiceManager
 from winsentry.port_monitor import PortMonitor
 from winsentry.service_monitor import ServiceMonitor
+from winsentry.system_resource_monitor import SystemResourceMonitor
 from winsentry.logger import setup_logging
 
 
@@ -34,9 +35,15 @@ def main():
         service_manager = ServiceManager()
         port_monitor = PortMonitor()
         service_monitor = ServiceMonitor()
+        resource_monitor = SystemResourceMonitor()
         
         # Create application
-        app = WinSentryApplication(service_manager, port_monitor, service_monitor)
+        app = WinSentryApplication(
+            service_manager, 
+            port_monitor, 
+            service_monitor, 
+            resource_monitor
+        )
         
         # Start the server
         logger.info(f"Starting WinSentry on port {options.port}")
@@ -49,6 +56,7 @@ def main():
         def start_monitoring_tasks():
             asyncio.create_task(port_monitor.start_monitoring())
             asyncio.create_task(service_monitor.start_monitoring())
+            asyncio.create_task(resource_monitor.start_monitoring())
         
         # Schedule the monitoring tasks to start after the loop begins
         loop.add_callback(start_monitoring_tasks)

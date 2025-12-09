@@ -2,13 +2,13 @@
 Tornado web application for WinSentry
 """
 
-
+import os
 from tornado import web
 
 
 try:
     # Try absolute imports first (when installed as package)
-           from winsentry.handlers import (
+    from winsentry.handlers import (
                MainHandler,
                EmailConfigPageHandler,
                ServicesHandler,
@@ -37,7 +37,14 @@ try:
                ServiceResourceSummaryHandler,
                ServiceThresholdHandler,
                ServiceThresholdCheckHandler,
-               ServiceProcessLogsHandler
+               ServiceProcessLogsHandler,
+               PortStatusWebSocketHandler,
+               PortMonitoringStatusHandler,
+               PortKillProcessHandler,
+               PortForceKillProcessHandler,
+               SystemResourcesHandler,
+               SystemResourceThresholdsHandler,
+               SystemResourceLogsHandler
            )
 except ImportError:
     # Fall back to relative imports (when running directly)
@@ -70,17 +77,25 @@ except ImportError:
         ServiceResourceSummaryHandler,
         ServiceThresholdHandler,
         ServiceThresholdCheckHandler,
-        ServiceProcessLogsHandler
+        ServiceProcessLogsHandler,
+        PortStatusWebSocketHandler,
+        PortMonitoringStatusHandler,
+        PortKillProcessHandler,
+        PortForceKillProcessHandler,
+        SystemResourcesHandler,
+        SystemResourceThresholdsHandler,
+        SystemResourceLogsHandler
     )
 
 
 class WinSentryApplication(web.Application):
     """Main Tornado application"""
     
-    def __init__(self, service_manager, port_monitor, service_monitor):
+    def __init__(self, service_manager, port_monitor, service_monitor, resource_monitor=None):
         self.service_manager = service_manager
         self.port_monitor = port_monitor
         self.service_monitor = service_monitor
+        self.resource_monitor = resource_monitor
         
         handlers = [
             (r"/", MainHandler),
@@ -112,14 +127,26 @@ class WinSentryApplication(web.Application):
             (r"/api/service-monitor/threshold-check", ServiceThresholdCheckHandler, dict(service_monitor=service_monitor)),
             (r"/api/service-process-logs", ServiceProcessLogsHandler, dict(service_monitor=service_monitor)),
             (r"/api/logs", LogsHandler),
-               (r"/static/(.*)", web.StaticFileHandler, {"path": "winsentry/static"}),
+            (r"/ws/port-status", PortStatusWebSocketHandler, dict(port_monitor=port_monitor)),
+            (r"/api/ports/monitoring-status", PortMonitoringStatusHandler, dict(port_monitor=port_monitor)),
+            (r"/api/ports/kill-process", PortKillProcessHandler, dict(port_monitor=port_monitor)),
+            (r"/api/ports/force-kill-process", PortForceKillProcessHandler, dict(port_monitor=port_monitor)),
+            (r"/static/(.*)", web.StaticFileHandler, {"path": os.path.join(os.path.dirname(__file__), "static")}),
         ]
+        
+        # Add system resource monitoring routes if resource_monitor is provided
+        if resource_monitor:
+            handlers.extend([
+                (r"/api/system-resources", SystemResourcesHandler, dict(resource_monitor=resource_monitor)),
+                (r"/api/system-resources/thresholds", SystemResourceThresholdsHandler, dict(resource_monitor=resource_monitor)),
+                (r"/api/system-resources/logs", SystemResourceLogsHandler, dict(resource_monitor=resource_monitor)),
+            ])
         
         settings = {
             "debug": True,
-            "template_path": "winsentry/templates",
-            "static_path": "winsentry/static",
-            "autoescape": None,
+            "template_path": os.path.join(os.path.dirname(__file__), "templates"),
+            "static_path": os.path.join(os.path.dirname(__file__), "static"),
+            "autoescape": "xhtml_escape",
         }
         
         super().__init__(handlers, **settings)
@@ -127,3 +154,4 @@ class WinSentryApplication(web.Application):
         # Make managers available to handlers
         self.service_manager = service_manager
         self.port_monitor = port_monitor
+        self.resource_monitor = resource_monitor

@@ -38,6 +38,7 @@ class PortMonitor:
         self.logger = logging.getLogger(__name__)
         self.monitored_ports: Dict[int, PortConfig] = {}
         self.monitoring_task: Optional[asyncio.Task] = None
+        self.port_tasks: Dict[int, asyncio.Task] = {}  # Individual port monitoring tasks
         self.running = False
         self.db = Database(db_path)
         self.email_alert = EmailAlert(db_path)
@@ -61,6 +62,59 @@ class PortMonitor:
                 self.logger.info(f"Loaded port configuration: {config['port']} (interval: {config['interval']}s)")
         except Exception as e:
             self.logger.error(f"Failed to load configurations: {e}")
+    
+    async def _create_port_monitoring_task(self, port: int) -> asyncio.Task:
+        """Create an individual monitoring task for a specific port"""
+        async def port_monitoring_loop():
+            """Individual monitoring loop for a specific port"""
+            config = self.monitored_ports.get(port)
+            if not config:
+                self.logger.warning(f"Port {port} configuration not found, stopping monitoring task")
+                return
+            
+            self.logger.info(f"Starting individual monitoring task for port {port} (interval: {config.interval}s)")
+            
+            while self.running and port in self.monitored_ports and config.enabled:
+                try:
+                    await self.check_port(port)
+                    await asyncio.sleep(config.interval)
+                    self.logger.debug(f"Port {port} monitoring task slept for {config.interval} seconds")
+                except asyncio.CancelledError:
+                    self.logger.info(f"Port {port} monitoring task cancelled")
+                    break
+                except Exception as e:
+                    self.logger.error(f"Error in port {port} monitoring task: {e}")
+                    await asyncio.sleep(5)  # Wait before retrying
+            
+            self.logger.info(f"Port {port} monitoring task stopped")
+        
+        # Create and return the task
+        task = asyncio.create_task(port_monitoring_loop())
+        return task
+    
+    async def _start_port_monitoring(self, port: int):
+        """Start individual monitoring for a specific port"""
+        if port in self.port_tasks:
+            # Stop existing task if it exists
+            await self._stop_port_monitoring(port)
+        
+        # Create new monitoring task
+        task = await self._create_port_monitoring_task(port)
+        self.port_tasks[port] = task
+        self.logger.info(f"Started individual monitoring for port {port}")
+    
+    async def _stop_port_monitoring(self, port: int):
+        """Stop individual monitoring for a specific port"""
+        if port in self.port_tasks:
+            task = self.port_tasks[port]
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            del self.port_tasks[port]
+            self.logger.info(f"Stopped individual monitoring for port {port}")
         
     async def add_port(self, port: int, interval: int = 30, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None) -> bool:
         """Add a port to monitor"""
@@ -85,6 +139,11 @@ class PortMonitor:
             self.logger.info(f"Added port {port} to monitoring with interval {interval}s")
             if powershell_script:
                 self.logger.info(f"PowerShell recovery script configured: {powershell_script}")
+            
+            # Start individual monitoring task for this port
+            if self.running:
+                await self._start_port_monitoring(port)
+            
             return True
         except Exception as e:
             self.logger.error(f"Failed to add port {port}: {e}")
@@ -93,7 +152,10 @@ class PortMonitor:
     async def remove_port(self, port: int) -> bool:
         """Remove a port from monitoring"""
         try:
-            # Remove from database first
+            # Stop individual monitoring task first
+            await self._stop_port_monitoring(port)
+            
+            # Remove from database
             if not self.db.delete_port_config(port):
                 return False
             
@@ -128,6 +190,10 @@ class PortMonitor:
             # Update in database
             if not self.db.save_port_config(port, config.interval, config.powershell_script, config.powershell_commands, config.enabled):
                 return False
+            
+            # Restart monitoring task if interval changed or enabled status changed
+            if (interval is not None or enabled is not None) and self.running:
+                await self._start_port_monitoring(port)
             
             self.logger.info(f"Updated configuration for port {port}")
             return True
@@ -367,7 +433,13 @@ $env:PYTHONUTF8 = "1"
         config.last_check = datetime.now()
         config.last_status = is_used
         
-        self.logger.debug(f"Port {port} check: {'ONLINE' if is_used else 'OFFLINE'} at {config.last_check}")
+        # Determine status string
+        status = "ONLINE" if is_used else "OFFLINE"
+        
+        self.logger.debug(f"Port {port} check: {status} at {config.last_check}")
+        
+        # Always update real-time status in database
+        self.db.update_port_status(port, status, config.failure_count)
         
         if not is_used:
             config.failure_count += 1
@@ -381,14 +453,25 @@ $env:PYTHONUTF8 = "1"
             
             # Execute PowerShell script or commands after N failures
             if config.failure_count >= email_config.get("powershell_script_failures", 3):
-                if config.powershell_script:
-                    await self.execute_powershell_script(config.powershell_script, port)
-                elif config.powershell_commands:
+                # Prioritize script file path over inline commands
+                if config.powershell_script and config.powershell_script.strip():
+                    # Use the .ps1 script file
+                    self.logger.info(f"Executing PowerShell script file for port {port}: {config.powershell_script}")
+                    success = await self.execute_powershell_script(config.powershell_script, port)
+                    if success:
+                        self.logger.info(f"PowerShell script executed successfully for port {port}")
+                    else:
+                        self.logger.error(f"PowerShell script failed for port {port}")
+                elif config.powershell_commands and config.powershell_commands.strip():
+                    # Use inline PowerShell commands as fallback
+                    self.logger.info(f"Executing inline PowerShell commands for port {port}")
                     result = await self.execute_powershell_commands(config.powershell_commands, port)
                     if result['success']:
                         self.logger.info(f"PowerShell commands executed successfully for port {port}")
                     else:
                         self.logger.error(f"PowerShell commands failed for port {port}: {result.get('stderr', 'Unknown error')}")
+                else:
+                    self.logger.warning(f"No recovery script or commands configured for port {port}")
             
             # Send email alert after M failures
             if (email_config.get("enabled", False) and 
@@ -451,24 +534,73 @@ $env:PYTHONUTF8 = "1"
             self.logger.error(f"Failed to check resources for port {port}: {e}")
     
     async def start_monitoring(self):
-        """Start the port monitoring loop"""
+        """Start the port monitoring for all configured ports"""
         if self.running:
             return
         
         self.running = True
-        self.monitoring_task = asyncio.create_task(self._monitoring_loop())
-        self.logger.info("Port monitoring started")
+        self.logger.info("Starting individual port monitoring tasks")
+        
+        # Start monitoring tasks for all configured ports
+        for port, config in self.monitored_ports.items():
+            if config.enabled:
+                await self._start_port_monitoring(port)
+        
+        self.logger.info(f"Port monitoring started for {len(self.port_tasks)} ports")
     
     async def stop_monitoring(self):
-        """Stop the port monitoring loop"""
+        """Stop all port monitoring tasks"""
         self.running = False
+        self.logger.info("Stopping all port monitoring tasks")
+        
+        # Stop all individual port monitoring tasks
+        for port in list(self.port_tasks.keys()):
+            await self._stop_port_monitoring(port)
+        
+        # Also stop the old monitoring task if it exists
         if self.monitoring_task:
             self.monitoring_task.cancel()
             try:
                 await self.monitoring_task
             except asyncio.CancelledError:
                 pass
-        self.logger.info("Port monitoring stopped")
+        
+        self.logger.info("All port monitoring stopped")
+    
+    def get_monitoring_status(self) -> Dict:
+        """Get status of all monitoring tasks"""
+        status = {
+            'running': self.running,
+            'total_ports': len(self.monitored_ports),
+            'active_tasks': len(self.port_tasks),
+            'port_tasks': {}
+        }
+        
+        for port, task in self.port_tasks.items():
+            status['port_tasks'][port] = {
+                'running': not task.done(),
+                'cancelled': task.cancelled(),
+                'exception': str(task.exception()) if task.done() and task.exception() else None
+            }
+        
+        return status
+    
+    async def cleanup_finished_tasks(self):
+        """Clean up finished or failed monitoring tasks"""
+        finished_ports = []
+        for port, task in self.port_tasks.items():
+            if task.done():
+                finished_ports.append(port)
+                if task.exception():
+                    self.logger.error(f"Port {port} monitoring task failed: {task.exception()}")
+                else:
+                    self.logger.info(f"Port {port} monitoring task finished")
+        
+        # Remove finished tasks
+        for port in finished_ports:
+            del self.port_tasks[port]
+        
+        return len(finished_ports)
     
     async def _monitoring_loop(self):
         """Main monitoring loop"""
@@ -498,7 +630,118 @@ $env:PYTHONUTF8 = "1"
                 await asyncio.sleep(5)  # Wait before retrying
     
     def get_monitored_ports(self) -> List[Dict]:
-        """Get list of monitored ports with their status"""
+        """Get list of monitored ports with their status from database"""
+        try:
+            # Get real-time status from database
+            db_status = self.db.get_port_status()
+            
+            # Create a mapping of port to database status
+            status_map = {status['port']: status for status in db_status}
+            
+            ports = []
+            for port, config in self.monitored_ports.items():
+                # Get status from database if available, otherwise use in-memory status
+                db_status_info = status_map.get(port, {})
+                
+                # Format last check timestamp for display
+                last_check_display = None
+                last_check_timestamp = db_status_info.get('last_check') or (config.last_check.isoformat() if config.last_check else None)
+                
+                if last_check_timestamp:
+                    try:
+                        # Parse timestamp - handle both string and datetime objects
+                        if isinstance(last_check_timestamp, str):
+                            # Use a more robust parsing approach
+                            try:
+                                # Try parsing with fromisoformat first
+                                last_check_dt = datetime.fromisoformat(last_check_timestamp)
+                            except ValueError:
+                                # Fallback to strptime for different formats
+                                try:
+                                    last_check_dt = datetime.strptime(last_check_timestamp, "%Y-%m-%dT%H:%M:%S.%f")
+                                except ValueError:
+                                    try:
+                                        last_check_dt = datetime.strptime(last_check_timestamp, "%Y-%m-%dT%H:%M:%S")
+                                    except ValueError:
+                                        # Last resort - try parsing as is
+                                        last_check_dt = datetime.fromisoformat(last_check_timestamp.replace('Z', ''))
+                        else:
+                            last_check_dt = last_check_timestamp
+                        
+                        # Show relative time (e.g., "2 minutes ago") and absolute time
+                        now = datetime.now()
+                        
+                        # Ensure both timestamps are in the same timezone (local time)
+                        if last_check_dt.tzinfo is None:
+                            # If no timezone info, assume local time
+                            last_check_local = last_check_dt
+                        else:
+                            # Convert to local time
+                            last_check_local = last_check_dt.astimezone()
+                        
+                        time_diff = now - last_check_local
+                        time_diff_seconds = time_diff.total_seconds()
+                        
+                        # Handle negative time differences (future timestamps)
+                        if time_diff_seconds < 0:
+                            last_check_display = "Future timestamp"
+                        elif time_diff_seconds < 60:
+                            last_check_display = f"{int(time_diff_seconds)}s ago"
+                        elif time_diff_seconds < 3600:
+                            last_check_display = f"{int(time_diff_seconds/60)}m ago"
+                        elif time_diff_seconds < 86400:
+                            last_check_display = f"{int(time_diff_seconds/3600)}h ago"
+                        else:
+                            last_check_display = f"{int(time_diff_seconds/86400)}d ago"
+                        
+                        # Also include the full timestamp
+                        full_timestamp = last_check_local.strftime("%Y-%m-%d %H:%M:%S")
+                        last_check_display = f"{last_check_display} ({full_timestamp})"
+                    except Exception as e:
+                        self.logger.warning(f"Failed to format timestamp for port {port}: {e}")
+                        self.logger.warning(f"Timestamp value: {last_check_timestamp}")
+                        last_check_display = "Invalid timestamp"
+                
+                # Format uptime display
+                uptime_display = None
+                uptime_seconds = db_status_info.get('uptime_seconds', 0)
+                if uptime_seconds > 0:
+                    if uptime_seconds < 60:
+                        uptime_display = f"{uptime_seconds}s"
+                    elif uptime_seconds < 3600:
+                        uptime_display = f"{int(uptime_seconds/60)}m {uptime_seconds%60}s"
+                    elif uptime_seconds < 86400:
+                        uptime_display = f"{int(uptime_seconds/3600)}h {int((uptime_seconds%3600)/60)}m"
+                    else:
+                        uptime_display = f"{int(uptime_seconds/86400)}d {int((uptime_seconds%86400)/3600)}h"
+                
+                ports.append({
+                    'port': port,
+                    'interval': config.interval,
+                    'powershell_script': config.powershell_script,
+                    'enabled': config.enabled,
+                    'last_check': last_check_timestamp,
+                    'last_check_display': last_check_display,
+                    'last_status': db_status_info.get('status', 'unknown'),
+                    'failure_count': db_status_info.get('failure_count', config.failure_count),
+                    'is_online': db_status_info.get('status') == 'online',
+                    'status': db_status_info.get('status', 'unknown'),
+                    'uptime_seconds': uptime_seconds,
+                    'uptime_display': uptime_display,
+                    'total_checks': db_status_info.get('total_checks', 0),
+                    'success_rate': db_status_info.get('success_rate', 0),
+                    'last_status_change': db_status_info.get('last_status_change')
+                })
+            
+            return ports
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get monitored ports from database: {e}")
+            # Fallback to in-memory status
+            return self._get_monitored_ports_fallback()
+    
+    def _get_monitored_ports_fallback(self) -> List[Dict]:
+        """Fallback method to get monitored ports from memory"""
         ports = []
         for port, config in self.monitored_ports.items():
             # Format last check timestamp for display
@@ -544,7 +787,13 @@ $env:PYTHONUTF8 = "1"
                 'last_check_display': last_check_display,
                 'last_status': config.last_status,
                 'failure_count': config.failure_count,
-                'is_online': config.last_status if config.last_check else None
+                'is_online': config.last_status if config.last_check else None,
+                'status': 'online' if config.last_status else 'offline',
+                'uptime_seconds': 0,
+                'uptime_display': None,
+                'total_checks': 0,
+                'success_rate': 0,
+                'last_status_change': None
             })
         return ports
     
@@ -782,3 +1031,184 @@ $env:PYTHONUTF8 = "1"
         except Exception as e:
             self.logger.error(f"Failed to get resource summary for port {port}: {e}")
             return {'error': str(e)}
+    
+    async def get_processes_on_port(self, port: int) -> List[Dict]:
+        """Get all processes using a specific port with detailed resource usage"""
+        try:
+            import psutil
+            processes = []
+            
+            for conn in psutil.net_connections(kind='inet'):
+                if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN:
+                    try:
+                        process = psutil.Process(conn.pid)
+                        
+                        # Get CPU and memory usage
+                        cpu_percent = process.cpu_percent()
+                        memory_info = process.memory_info()
+                        memory_percent = process.memory_percent()
+                        
+                        # Get additional process details
+                        try:
+                            cmdline = process.cmdline()
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            cmdline = []
+                        
+                        try:
+                            username = process.username()
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            username = "Unknown"
+                        
+                        processes.append({
+                            'pid': conn.pid,
+                            'name': process.name(),
+                            'status': process.status(),
+                            'create_time': process.create_time(),
+                            'cpu_percent': round(cpu_percent, 2),
+                            'memory_rss': memory_info.rss,  # Resident Set Size in bytes
+                            'memory_vms': memory_info.vms,  # Virtual Memory Size in bytes
+                            'memory_percent': round(memory_percent, 2),
+                            'cmdline': cmdline,
+                            'username': username,
+                            'port': port
+                        })
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        # Process may have died or we don't have access
+                        continue
+            
+            return processes
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get processes on port {port}: {e}")
+            return []
+    
+    async def kill_process(self, pid: int) -> bool:
+        """Kill a process gracefully"""
+        try:
+            import psutil
+            process = psutil.Process(pid)
+            process.terminate()
+            
+            # Wait for process to terminate
+            try:
+                process.wait(timeout=5)
+                self.logger.info(f"Process {pid} terminated gracefully")
+                return True
+            except psutil.TimeoutExpired:
+                # If it doesn't terminate, force kill it
+                process.kill()
+                self.logger.info(f"Process {pid} force killed after timeout")
+                return True
+                
+        except psutil.NoSuchProcess:
+            self.logger.warning(f"Process {pid} no longer exists")
+            return True
+        except psutil.AccessDenied:
+            self.logger.error(f"Access denied when trying to kill process {pid}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Failed to kill process {pid}: {e}")
+            return False
+    
+    async def force_kill_process(self, pid: int) -> bool:
+        """Force kill a process immediately"""
+        try:
+            import psutil
+            process = psutil.Process(pid)
+            process.kill()
+            self.logger.info(f"Process {pid} force killed")
+            return True
+            
+        except psutil.NoSuchProcess:
+            self.logger.warning(f"Process {pid} no longer exists")
+            return True
+        except psutil.AccessDenied:
+            self.logger.error(f"Access denied when trying to force kill process {pid}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Failed to force kill process {pid}: {e}")
+            return False
+    
+    async def kill_processes_on_port(self, port: int) -> Dict:
+        """Kill all processes running on a specific port"""
+        try:
+            processes = await self.get_processes_on_port(port)
+            results = {
+                'port': port,
+                'total_processes': len(processes),
+                'killed_processes': [],
+                'failed_processes': [],
+                'success': True
+            }
+            
+            for process in processes:
+                pid = process['pid']
+                success = await self.kill_process(pid)
+                if success:
+                    results['killed_processes'].append({
+                        'pid': pid,
+                        'name': process['name']
+                    })
+                else:
+                    results['failed_processes'].append({
+                        'pid': pid,
+                        'name': process['name']
+                    })
+                    results['success'] = False
+            
+            self.logger.info(f"Killed {len(results['killed_processes'])} processes on port {port}")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Failed to kill processes on port {port}: {e}")
+            return {
+                'port': port,
+                'total_processes': 0,
+                'killed_processes': [],
+                'failed_processes': [],
+                'success': False,
+                'error': str(e)
+            }
+    
+    async def force_kill_processes_on_port(self, port: int) -> Dict:
+        """Force kill all processes running on a specific port"""
+        try:
+            processes = await self.get_processes_on_port(port)
+            results = {
+                'port': port,
+                'total_processes': len(processes),
+                'killed_processes': [],
+                'failed_processes': [],
+                'success': True
+            }
+            
+            for process in processes:
+                pid = process['pid']
+                success = await self.force_kill_process(pid)
+                if success:
+                    results['killed_processes'].append({
+                        'pid': pid,
+                        'name': process['name']
+                    })
+                else:
+                    results['failed_processes'].append({
+                        'pid': pid,
+                        'name': process['name']
+                    })
+                    results['success'] = False
+            
+            self.logger.info(f"Force killed {len(results['killed_processes'])} processes on port {port}")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Failed to force kill processes on port {port}: {e}")
+            return {
+                'port': port,
+                'total_processes': 0,
+                'killed_processes': [],
+                'failed_processes': [],
+                'success': False,
+                'error': str(e)
+            }
+
+

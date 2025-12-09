@@ -1,5 +1,10 @@
 include README.md
 include requirements.txt
 include LICENSE
+include setup.py
+include run_winsentry.py
+include run_winsentry.bat
 recursive-include winsentry/templates *.html
 recursive-include winsentry/static *
+recursive-include examples *.ps1
+recursive-include docs *.md

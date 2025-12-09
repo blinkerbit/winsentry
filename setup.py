@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="winsentry",
-    version="1.0.0",
+    version="1.1.0",
     author="WinSentry",
     description="Windows Service and Port Monitoring Tool",
     long_description=long_description,
