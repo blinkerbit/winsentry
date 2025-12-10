@@ -654,6 +654,7 @@
             <button class="nav-tab active" data-tab="port-monitor">Port Monitor</button>
             <button class="nav-tab" data-tab="service-monitor">Service Monitor</button>
             <button class="nav-tab" data-tab="resource-monitor">Resource Monitor</button>
+            <button class="nav-tab" data-tab="adhoc-checks">Adhoc Checks</button>
             <button class="nav-tab" data-tab="logs">Logs</button>
         </div>
 
@@ -957,6 +958,161 @@
                         <tbody id="thresholdsTableBody">
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Adhoc Checks Tab -->
+        <div id="adhoc-checks" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Create Adhoc Check</h2>
+                </div>
+                <form id="adhocCheckForm">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="form-group">
+                            <label class="form-label" for="adhocCheckType">Check Type</label>
+                            <select id="adhocCheckType" class="form-input" onchange="toggleAdhocCheckFields()">
+                                <option value="service">Windows Service</option>
+                                <option value="process">Running Process</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="adhocTargetName">Target Name</label>
+                            <input type="text" id="adhocTargetName" class="form-input" required
+                                placeholder="Service name or process name (e.g., Spooler, notepad.exe)">
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="adhocExpectedStateGroup">
+                        <label class="form-label" for="adhocExpectedState">Expected State</label>
+                        <select id="adhocExpectedState" class="form-input">
+                            <option value="running">Running</option>
+                            <option value="stopped">Stopped</option>
+                            <option value="any">Any (just report status)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">If Check Fails (state mismatch):</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label>
+                                <input type="checkbox" id="adhocActionStartService" class="form-checkbox">
+                                Start Service (if stopped)
+                            </label>
+                            <label>
+                                <input type="checkbox" id="adhocActionStopService" class="form-checkbox">
+                                Stop Service (if running)
+                            </label>
+                            <label>
+                                <input type="checkbox" id="adhocActionRunScript" class="form-checkbox">
+                                Run PowerShell Script
+                            </label>
+                            <label>
+                                <input type="checkbox" id="adhocActionSendEmail" class="form-checkbox" checked>
+                                Send Email Alert
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="adhocScriptGroup" style="display:none;">
+                        <label class="form-label" for="adhocPowershellScript">PowerShell Script</label>
+                        <textarea id="adhocPowershellScript" class="form-input" rows="3"
+                            placeholder="PowerShell commands to run if check fails"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="adhocEmailRecipients">Email Recipients (comma-separated)</label>
+                        <input type="text" id="adhocEmailRecipients" class="form-input" placeholder="admin@example.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Schedule:</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label>
+                                <input type="radio" name="adhocScheduleType" value="now" checked
+                                    onchange="toggleScheduleFields()">
+                                Run Now (once)
+                            </label>
+                            <label>
+                                <input type="radio" name="adhocScheduleType" value="scheduled"
+                                    onchange="toggleScheduleFields()">
+                                Scheduled / Recurring
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="adhocScheduleFields" style="display:none;">
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="form-group">
+                                <label class="form-label" for="adhocScheduleDay">Day of Week</label>
+                                <select id="adhocScheduleDay" class="form-input">
+                                    <option value="*">Every Day</option>
+                                    <option value="0">Sunday</option>
+                                    <option value="1">Monday</option>
+                                    <option value="2">Tuesday</option>
+                                    <option value="3">Wednesday</option>
+                                    <option value="4">Thursday</option>
+                                    <option value="5">Friday</option>
+                                    <option value="6">Saturday</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="adhocScheduleTime">Time</label>
+                                <input type="time" id="adhocScheduleTime" class="form-input" value="14:00">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="adhocCheckName">Check Name</label>
+                                <input type="text" id="adhocCheckName" class="form-input"
+                                    placeholder="Weekly Service Check">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="submit" class="btn btn-primary">Run / Schedule Check</button>
+                        <button type="button" class="btn btn-secondary" onclick="runAdhocCheckNow()">▶ Run Now</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="flex justify-between items-center">
+                        <h2 class="card-title">Scheduled Checks</h2>
+                        <button class="btn btn-secondary btn-sm" onclick="refreshScheduledChecks()" title="Refresh">
+                            <span>🔄</span> Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Target</th>
+                                <th>Schedule</th>
+                                <th>Last Run</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scheduledChecksTableBody">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted">No scheduled checks configured</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Check Results</h2>
+                </div>
+                <div id="adhocCheckResults" class="log-container">
+                    <p class="text-muted">Run a check to see results here...</p>
                 </div>
             </div>
         </div>
@@ -1937,6 +2093,220 @@
                     <\/html>
                 `);
                 newWindow.document.close();
+            }
+        }
+
+        // Adhoc Checks Functions
+        function toggleAdhocCheckFields() {
+            const checkType = document.getElementById('adhocCheckType').value;
+            const expectedStateGroup = document.getElementById('adhocExpectedStateGroup');
+            const startServiceCheckbox = document.getElementById('adhocActionStartService');
+            const stopServiceCheckbox = document.getElementById('adhocActionStopService');
+
+            if (checkType === 'process') {
+                // For processes, simplified options
+                startServiceCheckbox.parentElement.style.display = 'none';
+                stopServiceCheckbox.parentElement.style.display = 'none';
+            } else {
+                startServiceCheckbox.parentElement.style.display = '';
+                stopServiceCheckbox.parentElement.style.display = '';
+            }
+        }
+
+        function toggleScheduleFields() {
+            const scheduleType = document.querySelector('input[name="adhocScheduleType"]:checked').value;
+            const scheduleFields = document.getElementById('adhocScheduleFields');
+            scheduleFields.style.display = scheduleType === 'scheduled' ? 'block' : 'none';
+        }
+
+        // Toggle script field visibility
+        document.getElementById('adhocActionRunScript').addEventListener('change', function () {
+            document.getElementById('adhocScriptGroup').style.display = this.checked ? 'block' : 'none';
+        });
+
+        async function runAdhocCheckNow() {
+            const checkType = document.getElementById('adhocCheckType').value;
+            const targetName = document.getElementById('adhocTargetName').value;
+            const expectedState = document.getElementById('adhocExpectedState').value;
+
+            if (!targetName) {
+                showAlert('error', 'Please enter a target name');
+                return;
+            }
+
+            const formData = {
+                check_type: checkType,
+                target_name: targetName,
+                expected_state: expectedState,
+                actions: {
+                    start_service: document.getElementById('adhocActionStartService').checked,
+                    stop_service: document.getElementById('adhocActionStopService').checked,
+                    run_script: document.getElementById('adhocActionRunScript').checked,
+                    send_email: document.getElementById('adhocActionSendEmail').checked
+                },
+                powershell_script: document.getElementById('adhocPowershellScript').value,
+                email_recipients: document.getElementById('adhocEmailRecipients').value
+            };
+
+            try {
+                const response = await apiCall('/api/adhoc-check/run', {
+                    method: 'POST',
+                    body: JSON.stringify(formData)
+                });
+
+                displayAdhocResult(response);
+                showAlert('success', 'Check completed');
+            } catch (error) {
+                showAlert('error', 'Failed to run check: ' + error.message);
+            }
+        }
+
+        document.getElementById('adhocCheckForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const scheduleType = document.querySelector('input[name="adhocScheduleType"]:checked').value;
+
+            if (scheduleType === 'now') {
+                await runAdhocCheckNow();
+            } else {
+                await scheduleAdhocCheck();
+            }
+        });
+
+        async function scheduleAdhocCheck() {
+            const checkType = document.getElementById('adhocCheckType').value;
+            const targetName = document.getElementById('adhocTargetName').value;
+            const expectedState = document.getElementById('adhocExpectedState').value;
+            const checkName = document.getElementById('adhocCheckName').value || `${checkType}-${targetName}`;
+            const scheduleDay = document.getElementById('adhocScheduleDay').value;
+            const scheduleTime = document.getElementById('adhocScheduleTime').value;
+
+            if (!targetName) {
+                showAlert('error', 'Please enter a target name');
+                return;
+            }
+
+            const formData = {
+                name: checkName,
+                check_type: checkType,
+                target_name: targetName,
+                expected_state: expectedState,
+                schedule: {
+                    day_of_week: scheduleDay,
+                    time: scheduleTime
+                },
+                actions: {
+                    start_service: document.getElementById('adhocActionStartService').checked,
+                    stop_service: document.getElementById('adhocActionStopService').checked,
+                    run_script: document.getElementById('adhocActionRunScript').checked,
+                    send_email: document.getElementById('adhocActionSendEmail').checked
+                },
+                powershell_script: document.getElementById('adhocPowershellScript').value,
+                email_recipients: document.getElementById('adhocEmailRecipients').value
+            };
+
+            try {
+                await apiCall('/api/adhoc-check/schedule', {
+                    method: 'POST',
+                    body: JSON.stringify(formData)
+                });
+
+                showAlert('success', 'Check scheduled successfully');
+                document.getElementById('adhocCheckForm').reset();
+                refreshScheduledChecks();
+            } catch (error) {
+                showAlert('error', 'Failed to schedule check: ' + error.message);
+            }
+        }
+
+        async function refreshScheduledChecks() {
+            try {
+                const response = await apiCall('/api/adhoc-check/scheduled');
+                const checks = response.checks || [];
+                displayScheduledChecks(checks);
+            } catch (error) {
+                console.error('Failed to refresh scheduled checks:', error);
+            }
+        }
+
+        function displayScheduledChecks(checks) {
+            const tbody = document.getElementById('scheduledChecksTableBody');
+
+            if (checks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No scheduled checks configured</td></tr>';
+                return;
+            }
+
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+            tbody.innerHTML = checks.map(check => {
+                const dayDisplay = check.schedule.day_of_week === '*' ? 'Every Day' :
+                    dayNames[parseInt(check.schedule.day_of_week)] || check.schedule.day_of_week;
+                const scheduleDisplay = `${dayDisplay} at ${check.schedule.time}`;
+                const statusClass = check.last_status === 'pass' ? 'running' : check.last_status === 'fail' ? 'stopped' : 'unknown';
+
+                return `
+                    <tr>
+                        <td>${check.name}</td>
+                        <td>${check.check_type}</td>
+                        <td>${check.target_name}</td>
+                        <td>${scheduleDisplay}</td>
+                        <td>${getTimeDelta(check.last_run)}</td>
+                        <td><span class="status-badge status-${statusClass}">${check.last_status || 'pending'}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-secondary" onclick="runScheduledCheckNow('${check.id}')">▶ Run</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteScheduledCheck('${check.id}')">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function displayAdhocResult(result) {
+            const container = document.getElementById('adhocCheckResults');
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+            const statusClass = result.status === 'pass' ? 'success' : result.status === 'fail' ? 'error' : 'warning';
+
+            const resultHtml = `
+                <div class="log-entry log-${statusClass}">
+                    <strong>[${timestamp}]</strong> 
+                    <span class="status-badge status-${result.status === 'pass' ? 'running' : 'stopped'}">${result.status.toUpperCase()}</span>
+                    <strong>${result.check_type}</strong>: ${result.target_name}<br>
+                    <span>Current State: <strong>${result.current_state}</strong></span>
+                    ${result.expected_state !== 'any' ? ` | Expected: <strong>${result.expected_state}</strong>` : ''}
+                    ${result.actions_taken && result.actions_taken.length > 0 ?
+                    `<br><span>Actions: ${result.actions_taken.join(', ')}</span>` : ''}
+                    ${result.message ? `<br><span class="text-muted">${result.message}</span>` : ''}
+                </div>
+            ` + container.innerHTML;
+
+            container.innerHTML = resultHtml;
+        }
+
+        async function runScheduledCheckNow(checkId) {
+            try {
+                const response = await apiCall(`/api/adhoc-check/scheduled/${checkId}/run`, {
+                    method: 'POST'
+                });
+                displayAdhocResult(response);
+                showAlert('success', 'Check executed');
+                refreshScheduledChecks();
+            } catch (error) {
+                showAlert('error', 'Failed to run check: ' + error.message);
+            }
+        }
+
+        async function deleteScheduledCheck(checkId) {
+            if (!confirm('Are you sure you want to delete this scheduled check?')) return;
+
+            try {
+                await apiCall(`/api/adhoc-check/scheduled/${checkId}`, {
+                    method: 'DELETE'
+                });
+                showAlert('success', 'Scheduled check deleted');
+                refreshScheduledChecks();
+            } catch (error) {
+                showAlert('error', 'Failed to delete check: ' + error.message);
             }
         }
 

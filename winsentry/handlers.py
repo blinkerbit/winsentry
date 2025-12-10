@@ -2010,3 +2010,179 @@ class SystemResourceLogsHandler(BaseHandler):
                 'success': False,
                 'error': str(e)
             }, 500)
+
+
+class AdhocCheckRunHandler(BaseHandler):
+    """Handle running adhoc checks"""
+    
+    def initialize(self, adhoc_check_manager):
+        self.adhoc_check_manager = adhoc_check_manager
+    
+    async def post(self):
+        """Run an adhoc check immediately"""
+        try:
+            data = json.loads(self.request.body)
+            
+            check_type = data.get('check_type', 'service')
+            target_name = data.get('target_name')
+            expected_state = data.get('expected_state', 'running')
+            actions = data.get('actions', {})
+            powershell_script = data.get('powershell_script', '')
+            email_recipients = data.get('email_recipients', '')
+            
+            if not target_name:
+                self.write_json({
+                    'success': False,
+                    'error': 'Target name is required'
+                }, 400)
+                return
+            
+            result = await self.adhoc_check_manager.run_check(
+                check_type=check_type,
+                target_name=target_name,
+                expected_state=expected_state,
+                actions=actions,
+                powershell_script=powershell_script,
+                email_recipients=email_recipients
+            )
+            
+            self.write_json(result)
+            
+        except Exception as e:
+            logger.error(f"Failed to run adhoc check: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class AdhocCheckScheduleHandler(BaseHandler):
+    """Handle scheduling adhoc checks"""
+    
+    def initialize(self, adhoc_check_manager):
+        self.adhoc_check_manager = adhoc_check_manager
+    
+    async def post(self):
+        """Schedule a new adhoc check"""
+        try:
+            data = json.loads(self.request.body)
+            
+            name = data.get('name')
+            check_type = data.get('check_type', 'service')
+            target_name = data.get('target_name')
+            expected_state = data.get('expected_state', 'running')
+            schedule = data.get('schedule', {})
+            actions = data.get('actions', {})
+            powershell_script = data.get('powershell_script', '')
+            email_recipients = data.get('email_recipients', '')
+            
+            if not target_name:
+                self.write_json({
+                    'success': False,
+                    'error': 'Target name is required'
+                }, 400)
+                return
+            
+            if not name:
+                name = f"{check_type}-{target_name}"
+            
+            result = await self.adhoc_check_manager.schedule_check(
+                name=name,
+                check_type=check_type,
+                target_name=target_name,
+                expected_state=expected_state,
+                schedule=schedule,
+                actions=actions,
+                powershell_script=powershell_script,
+                email_recipients=email_recipients
+            )
+            
+            self.write_json(result)
+            
+        except Exception as e:
+            logger.error(f"Failed to schedule adhoc check: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class AdhocCheckScheduledHandler(BaseHandler):
+    """Handle managing scheduled adhoc checks"""
+    
+    def initialize(self, adhoc_check_manager):
+        self.adhoc_check_manager = adhoc_check_manager
+    
+    async def get(self):
+        """Get all scheduled checks"""
+        try:
+            checks = self.adhoc_check_manager.get_scheduled_checks()
+            
+            self.write_json({
+                'success': True,
+                'checks': checks
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to get scheduled checks: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class AdhocCheckScheduledActionHandler(BaseHandler):
+    """Handle actions on specific scheduled checks"""
+    
+    def initialize(self, adhoc_check_manager):
+        self.adhoc_check_manager = adhoc_check_manager
+    
+    async def delete(self, check_id):
+        """Delete a scheduled check"""
+        try:
+            result = await self.adhoc_check_manager.delete_scheduled_check(check_id)
+            
+            if result:
+                self.write_json({
+                    'success': True,
+                    'message': f'Scheduled check {check_id} deleted'
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Scheduled check {check_id} not found'
+                }, 404)
+                
+        except Exception as e:
+            logger.error(f"Failed to delete scheduled check: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class AdhocCheckScheduledRunHandler(BaseHandler):
+    """Handle running a scheduled check immediately"""
+    
+    def initialize(self, adhoc_check_manager):
+        self.adhoc_check_manager = adhoc_check_manager
+    
+    async def post(self, check_id):
+        """Run a scheduled check immediately"""
+        try:
+            result = await self.adhoc_check_manager.run_scheduled_check(check_id)
+            
+            if result:
+                self.write_json(result)
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Scheduled check {check_id} not found'
+                }, 404)
+                
+        except Exception as e:
+            logger.error(f"Failed to run scheduled check: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)

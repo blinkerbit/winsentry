@@ -15,6 +15,7 @@ from winsentry.service_manager import ServiceManager
 from winsentry.port_monitor import PortMonitor
 from winsentry.service_monitor import ServiceMonitor
 from winsentry.system_resource_monitor import SystemResourceMonitor
+from winsentry.adhoc_check_manager import AdhocCheckManager
 from winsentry.logger import setup_logging
 
 
@@ -36,13 +37,15 @@ def main():
         port_monitor = PortMonitor()
         service_monitor = ServiceMonitor()
         resource_monitor = SystemResourceMonitor()
+        adhoc_check_manager = AdhocCheckManager()
         
         # Create application
         app = WinSentryApplication(
             service_manager, 
             port_monitor, 
             service_monitor, 
-            resource_monitor
+            resource_monitor,
+            adhoc_check_manager
         )
         
         # Start the server
@@ -57,6 +60,7 @@ def main():
             asyncio.create_task(port_monitor.start_monitoring())
             asyncio.create_task(service_monitor.start_monitoring())
             asyncio.create_task(resource_monitor.start_monitoring())
+            asyncio.create_task(adhoc_check_manager.start_monitoring())
         
         # Schedule the monitoring tasks to start after the loop begins
         loop.add_callback(start_monitoring_tasks)

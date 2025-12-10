@@ -44,7 +44,12 @@ try:
                PortForceKillProcessHandler,
                SystemResourcesHandler,
                SystemResourceThresholdsHandler,
-               SystemResourceLogsHandler
+               SystemResourceLogsHandler,
+               AdhocCheckRunHandler,
+               AdhocCheckScheduleHandler,
+               AdhocCheckScheduledHandler,
+               AdhocCheckScheduledActionHandler,
+               AdhocCheckScheduledRunHandler
            )
 except ImportError:
     # Fall back to relative imports (when running directly)
@@ -84,18 +89,24 @@ except ImportError:
         PortForceKillProcessHandler,
         SystemResourcesHandler,
         SystemResourceThresholdsHandler,
-        SystemResourceLogsHandler
+        SystemResourceLogsHandler,
+        AdhocCheckRunHandler,
+        AdhocCheckScheduleHandler,
+        AdhocCheckScheduledHandler,
+        AdhocCheckScheduledActionHandler,
+        AdhocCheckScheduledRunHandler
     )
 
 
 class WinSentryApplication(web.Application):
     """Main Tornado application"""
     
-    def __init__(self, service_manager, port_monitor, service_monitor, resource_monitor=None):
+    def __init__(self, service_manager, port_monitor, service_monitor, resource_monitor=None, adhoc_check_manager=None):
         self.service_manager = service_manager
         self.port_monitor = port_monitor
         self.service_monitor = service_monitor
         self.resource_monitor = resource_monitor
+        self.adhoc_check_manager = adhoc_check_manager
         
         handlers = [
             (r"/", MainHandler),
@@ -140,6 +151,16 @@ class WinSentryApplication(web.Application):
                 (r"/api/system-resources", SystemResourcesHandler, dict(resource_monitor=resource_monitor)),
                 (r"/api/system-resources/thresholds", SystemResourceThresholdsHandler, dict(resource_monitor=resource_monitor)),
                 (r"/api/system-resources/logs", SystemResourceLogsHandler, dict(resource_monitor=resource_monitor)),
+            ])
+        
+        # Add adhoc check routes if adhoc_check_manager is provided
+        if adhoc_check_manager:
+            handlers.extend([
+                (r"/api/adhoc-check/run", AdhocCheckRunHandler, dict(adhoc_check_manager=adhoc_check_manager)),
+                (r"/api/adhoc-check/schedule", AdhocCheckScheduleHandler, dict(adhoc_check_manager=adhoc_check_manager)),
+                (r"/api/adhoc-check/scheduled", AdhocCheckScheduledHandler, dict(adhoc_check_manager=adhoc_check_manager)),
+                (r"/api/adhoc-check/scheduled/([^/]+)", AdhocCheckScheduledActionHandler, dict(adhoc_check_manager=adhoc_check_manager)),
+                (r"/api/adhoc-check/scheduled/([^/]+)/run", AdhocCheckScheduledRunHandler, dict(adhoc_check_manager=adhoc_check_manager)),
             ])
         
         settings = {
