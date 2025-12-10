@@ -37,6 +37,10 @@ class ServiceConfig:
     last_restart_attempt: Optional[datetime] = None
     restart_failed: bool = False  # All restart attempts exhausted
     
+    # Recovery script configuration
+    recovery_script_delay: int = 300  # Minimum seconds between recovery script executions (default 5 minutes)
+    last_recovery_script_run: Optional[datetime] = None  # When recovery script was last executed
+    
     # Alert configuration
     email_recipients: Optional[str] = None  # Comma-separated email addresses
     alert_on_stopped: bool = True  # Alert when service stops
@@ -446,15 +450,28 @@ $env:PYTHONUTF8 = "1"
             email_config = self.email_alert.get_service_email_config(service_name)
             
             # Execute PowerShell script or commands after N failures
+            # But only if enough time has passed since last recovery script run
             if config.failure_count >= email_config.get("powershell_script_failures", 3):
-                if config.powershell_script:
-                    await self.execute_powershell_script(config.powershell_script, service_name)
-                elif config.powershell_commands:
-                    result = await self.execute_powershell_commands(config.powershell_commands, service_name)
-                    if result['success']:
-                        self.logger.info(f"PowerShell commands executed successfully for service {service_name}")
-                    else:
-                        self.logger.error(f"PowerShell commands failed for service {service_name}: {result.get('stderr', 'Unknown error')}")
+                # Check if we should wait before running recovery script again
+                can_run_recovery = True
+                if config.last_recovery_script_run:
+                    seconds_since_last_run = (datetime.now() - config.last_recovery_script_run).total_seconds()
+                    if seconds_since_last_run < config.recovery_script_delay:
+                        remaining_wait = int(config.recovery_script_delay - seconds_since_last_run)
+                        self.logger.info(f"Recovery script for service {service_name} on cooldown. Next run in {remaining_wait}s")
+                        can_run_recovery = False
+                
+                if can_run_recovery:
+                    if config.powershell_script:
+                        config.last_recovery_script_run = datetime.now()
+                        await self.execute_powershell_script(config.powershell_script, service_name)
+                    elif config.powershell_commands:
+                        config.last_recovery_script_run = datetime.now()
+                        result = await self.execute_powershell_commands(config.powershell_commands, service_name)
+                        if result['success']:
+                            self.logger.info(f"PowerShell commands executed successfully for service {service_name}")
+                        else:
+                            self.logger.error(f"PowerShell commands failed for service {service_name}: {result.get('stderr', 'Unknown error')}")
             
             # Send email alert after M failures
             if (email_config.get("enabled", False) and 

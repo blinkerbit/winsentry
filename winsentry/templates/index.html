@@ -688,11 +688,19 @@
                             placeholder="Optional inline PowerShell commands to run when port goes offline"></textarea>
                         <small class="text-gray-500">Used only if no script path is provided above</small>
                     </div>
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="portEnabled" class="form-checkbox" checked>
-                            Enable monitoring
-                        </label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="form-group">
+                            <label class="form-label" for="portRecoveryDelay">Recovery Script Delay (seconds)</label>
+                            <input type="number" id="portRecoveryDelay" class="form-input" value="300" min="30">
+                            <small class="text-gray-500">Minimum time between recovery script executions (default: 300s
+                                = 5 min)</small>
+                        </div>
+                        <div class="form-group" style="display: flex; align-items: center; padding-top: 20px;">
+                            <label>
+                                <input type="checkbox" id="portEnabled" class="form-checkbox" checked>
+                                Enable monitoring
+                            </label>
+                        </div>
                     </div>
                     <button type="submit" class="btn btn-primary">Add Port Monitor</button>
                 </form>
@@ -751,6 +759,12 @@
                         <label class="form-label" for="serviceScript">Recovery Script (PowerShell)</label>
                         <textarea id="serviceScript" class="form-input" rows="3"
                             placeholder="Optional PowerShell script to run when service stops"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="serviceRecoveryDelay">Recovery Script Delay (seconds)</label>
+                        <input type="number" id="serviceRecoveryDelay" class="form-input" value="300" min="30">
+                        <small class="text-gray-500">Minimum time between recovery script executions (default: 300s = 5
+                            min)</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="serviceEmailRecipients">Email Recipients

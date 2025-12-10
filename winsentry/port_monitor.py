@@ -29,6 +29,10 @@ class PortConfig:
     last_check: Optional[datetime] = None
     last_status: bool = False
     failure_count: int = 0
+    
+    # Recovery script configuration
+    recovery_script_delay: int = 300  # Minimum seconds between recovery script executions (default 5 minutes)
+    last_recovery_script_run: Optional[datetime] = None  # When recovery script was last executed
 
 
 class PortMonitor:
@@ -56,7 +60,8 @@ class PortMonitor:
                     interval=config['interval'],
                     powershell_script=config['powershell_script'],
                     powershell_commands=config['powershell_commands'],
-                    enabled=config['enabled']
+                    enabled=config['enabled'],
+                    recovery_script_delay=config.get('recovery_script_delay', 300)
                 )
                 self.monitored_ports[config['port']] = port_config
                 self.logger.info(f"Loaded port configuration: {config['port']} (interval: {config['interval']}s)")
@@ -452,26 +457,39 @@ $env:PYTHONUTF8 = "1"
             email_config = self.email_alert.get_port_email_config(port)
             
             # Execute PowerShell script or commands after N failures
+            # But only if enough time has passed since last recovery script run
             if config.failure_count >= email_config.get("powershell_script_failures", 3):
-                # Prioritize script file path over inline commands
-                if config.powershell_script and config.powershell_script.strip():
-                    # Use the .ps1 script file
-                    self.logger.info(f"Executing PowerShell script file for port {port}: {config.powershell_script}")
-                    success = await self.execute_powershell_script(config.powershell_script, port)
-                    if success:
-                        self.logger.info(f"PowerShell script executed successfully for port {port}")
+                # Check if we should wait before running recovery script again
+                can_run_recovery = True
+                if config.last_recovery_script_run:
+                    seconds_since_last_run = (datetime.now() - config.last_recovery_script_run).total_seconds()
+                    if seconds_since_last_run < config.recovery_script_delay:
+                        remaining_wait = int(config.recovery_script_delay - seconds_since_last_run)
+                        self.logger.info(f"Recovery script for port {port} on cooldown. Next run in {remaining_wait}s")
+                        can_run_recovery = False
+                
+                if can_run_recovery:
+                    # Prioritize script file path over inline commands
+                    if config.powershell_script and config.powershell_script.strip():
+                        # Use the .ps1 script file
+                        config.last_recovery_script_run = datetime.now()
+                        self.logger.info(f"Executing PowerShell script file for port {port}: {config.powershell_script}")
+                        success = await self.execute_powershell_script(config.powershell_script, port)
+                        if success:
+                            self.logger.info(f"PowerShell script executed successfully for port {port}")
+                        else:
+                            self.logger.error(f"PowerShell script failed for port {port}")
+                    elif config.powershell_commands and config.powershell_commands.strip():
+                        # Use inline PowerShell commands as fallback
+                        config.last_recovery_script_run = datetime.now()
+                        self.logger.info(f"Executing inline PowerShell commands for port {port}")
+                        result = await self.execute_powershell_commands(config.powershell_commands, port)
+                        if result['success']:
+                            self.logger.info(f"PowerShell commands executed successfully for port {port}")
+                        else:
+                            self.logger.error(f"PowerShell commands failed for port {port}: {result.get('stderr', 'Unknown error')}")
                     else:
-                        self.logger.error(f"PowerShell script failed for port {port}")
-                elif config.powershell_commands and config.powershell_commands.strip():
-                    # Use inline PowerShell commands as fallback
-                    self.logger.info(f"Executing inline PowerShell commands for port {port}")
-                    result = await self.execute_powershell_commands(config.powershell_commands, port)
-                    if result['success']:
-                        self.logger.info(f"PowerShell commands executed successfully for port {port}")
-                    else:
-                        self.logger.error(f"PowerShell commands failed for port {port}: {result.get('stderr', 'Unknown error')}")
-                else:
-                    self.logger.warning(f"No recovery script or commands configured for port {port}")
+                        self.logger.warning(f"No recovery script or commands configured for port {port}")
             
             # Send email alert after M failures
             if (email_config.get("enabled", False) and 

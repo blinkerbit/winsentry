@@ -172,6 +172,22 @@ class Database:
                     # Column already exists, ignore
                     pass
                 
+                # Add recovery_script_delay column to port_configs (migration)
+                try:
+                    cursor.execute('ALTER TABLE port_configs ADD COLUMN recovery_script_delay INTEGER DEFAULT 300')
+                    logger.info("Added recovery_script_delay column to port_configs table")
+                except sqlite3.OperationalError:
+                    # Column already exists, ignore
+                    pass
+                
+                # Add recovery_script_delay column to service_configs (migration)
+                try:
+                    cursor.execute('ALTER TABLE service_configs ADD COLUMN recovery_script_delay INTEGER DEFAULT 300')
+                    logger.info("Added recovery_script_delay column to service_configs table")
+                except sqlite3.OperationalError:
+                    # Column already exists, ignore
+                    pass
+                
                 conn.commit()
                 logger.info("Database initialized successfully")
                 
@@ -179,7 +195,7 @@ class Database:
             logger.error(f"Failed to initialize database: {e}")
             raise
     
-    def save_port_config(self, port: int, interval: int, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None, enabled: bool = True) -> bool:
+    def save_port_config(self, port: int, interval: int, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None, enabled: bool = True, recovery_script_delay: int = 300) -> bool:
         """Save or update port configuration"""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -187,12 +203,12 @@ class Database:
                 
                 cursor.execute('''
                     INSERT OR REPLACE INTO port_configs 
-                    (port, interval_seconds, powershell_script, powershell_commands, enabled, updated_at)
-                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ''', (port, interval, powershell_script, powershell_commands, enabled))
+                    (port, interval_seconds, powershell_script, powershell_commands, enabled, recovery_script_delay, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (port, interval, powershell_script, powershell_commands, enabled, recovery_script_delay))
                 
                 conn.commit()
-                logger.info(f"Port configuration saved: port={port}, interval={interval}s")
+                logger.info(f"Port configuration saved: port={port}, interval={interval}s, recovery_delay={recovery_script_delay}s")
                 return True
                 
         except Exception as e:
@@ -207,7 +223,8 @@ class Database:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
-                    SELECT port, interval_seconds, powershell_script, powershell_commands, enabled, created_at, updated_at
+                    SELECT port, interval_seconds, powershell_script, powershell_commands, enabled, 
+                           recovery_script_delay, created_at, updated_at
                     FROM port_configs WHERE port = ?
                 ''', (port,))
                 
@@ -219,6 +236,7 @@ class Database:
                         'powershell_script': row['powershell_script'],
                         'powershell_commands': row['powershell_commands'],
                         'enabled': bool(row['enabled']),
+                        'recovery_script_delay': row['recovery_script_delay'] or 300,
                         'created_at': row['created_at'],
                         'updated_at': row['updated_at']
                     }
@@ -236,7 +254,8 @@ class Database:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
-                    SELECT port, interval_seconds, powershell_script, powershell_commands, enabled, created_at, updated_at
+                    SELECT port, interval_seconds, powershell_script, powershell_commands, enabled, 
+                           recovery_script_delay, created_at, updated_at
                     FROM port_configs ORDER BY port
                 ''')
                 
@@ -248,6 +267,7 @@ class Database:
                         'powershell_script': row['powershell_script'],
                         'powershell_commands': row['powershell_commands'],
                         'enabled': bool(row['enabled']),
+                        'recovery_script_delay': row['recovery_script_delay'] or 300,
                         'created_at': row['created_at'],
                         'updated_at': row['updated_at']
                     })
@@ -501,7 +521,7 @@ class Database:
             return {}
     
     # Service monitoring methods
-    def save_service_config(self, service_name: str, interval: int, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None, enabled: bool = True) -> bool:
+    def save_service_config(self, service_name: str, interval: int, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None, enabled: bool = True, recovery_script_delay: int = 300) -> bool:
         """Save or update service configuration"""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -509,12 +529,12 @@ class Database:
                 
                 cursor.execute('''
                     INSERT OR REPLACE INTO service_configs 
-                    (service_name, interval_seconds, powershell_script, powershell_commands, enabled, updated_at)
-                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ''', (service_name, interval, powershell_script, powershell_commands, enabled))
+                    (service_name, interval_seconds, powershell_script, powershell_commands, enabled, recovery_script_delay, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (service_name, interval, powershell_script, powershell_commands, enabled, recovery_script_delay))
                 
                 conn.commit()
-                logger.info(f"Service configuration saved: service={service_name}, interval={interval}s")
+                logger.info(f"Service configuration saved: service={service_name}, interval={interval}s, recovery_delay={recovery_script_delay}s")
                 return True
                 
         except Exception as e:
@@ -529,7 +549,8 @@ class Database:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
-                    SELECT service_name, interval_seconds, powershell_script, powershell_commands, enabled, created_at, updated_at
+                    SELECT service_name, interval_seconds, powershell_script, powershell_commands, enabled, 
+                           recovery_script_delay, created_at, updated_at
                     FROM service_configs WHERE service_name = ?
                 ''', (service_name,))
                 
@@ -541,6 +562,7 @@ class Database:
                         'powershell_script': row['powershell_script'],
                         'powershell_commands': row['powershell_commands'],
                         'enabled': bool(row['enabled']),
+                        'recovery_script_delay': row['recovery_script_delay'] or 300,
                         'created_at': row['created_at'],
                         'updated_at': row['updated_at']
                     }
@@ -558,7 +580,8 @@ class Database:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
-                    SELECT service_name, interval_seconds, powershell_script, powershell_commands, enabled, created_at, updated_at
+                    SELECT service_name, interval_seconds, powershell_script, powershell_commands, enabled, 
+                           recovery_script_delay, created_at, updated_at
                     FROM service_configs ORDER BY service_name
                 ''')
                 
@@ -570,6 +593,7 @@ class Database:
                         'powershell_script': row['powershell_script'],
                         'powershell_commands': row['powershell_commands'],
                         'enabled': bool(row['enabled']),
+                        'recovery_script_delay': row['recovery_script_delay'] or 300,
                         'created_at': row['created_at'],
                         'updated_at': row['updated_at']
                     })
