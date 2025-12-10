@@ -691,9 +691,9 @@
                     <div class="grid grid-cols-2 gap-3">
                         <div class="form-group">
                             <label class="form-label" for="portRecoveryDelay">Recovery Script Delay (seconds)</label>
-                            <input type="number" id="portRecoveryDelay" class="form-input" value="300" min="30">
-                            <small class="text-gray-500">Minimum time between recovery script executions (default: 300s
-                                = 5 min)</small>
+                            <input type="number" id="portRecoveryDelay" class="form-input" value="20" min="5">
+                            <small class="text-gray-500">Minimum time between recovery script executions (default:
+                                20s)</small>
                         </div>
                         <div class="form-group" style="display: flex; align-items: center; padding-top: 20px;">
                             <label>
@@ -762,9 +762,9 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="serviceRecoveryDelay">Recovery Script Delay (seconds)</label>
-                        <input type="number" id="serviceRecoveryDelay" class="form-input" value="300" min="30">
-                        <small class="text-gray-500">Minimum time between recovery script executions (default: 300s = 5
-                            min)</small>
+                        <input type="number" id="serviceRecoveryDelay" class="form-input" value="20" min="5">
+                        <small class="text-gray-500">Minimum time between recovery script executions (default:
+                            20s)</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="serviceEmailRecipients">Email Recipients
@@ -1271,6 +1271,7 @@
                 interval: parseInt(document.getElementById('portInterval').value),
                 powershell_script: document.getElementById('portScriptPath').value.trim() || null,
                 powershell_commands: document.getElementById('portScript').value.trim() || null,
+                recovery_script_delay: parseInt(document.getElementById('portRecoveryDelay').value) || 20,
                 enabled: document.getElementById('portEnabled').checked
             };
 
@@ -2332,6 +2333,7 @@
                 service_name: document.getElementById('serviceName').value,
                 interval: parseInt(document.getElementById('serviceInterval').value),
                 recovery_script: document.getElementById('serviceScript').value,
+                recovery_script_delay: parseInt(document.getElementById('serviceRecoveryDelay').value) || 20,
                 enabled: document.getElementById('serviceEnabled').checked,
                 email_recipients: document.getElementById('serviceEmailRecipients').value,
                 // Auto-restart configuration
@@ -2357,6 +2359,7 @@
                 document.getElementById('autoRestartEnabled').checked = true;
                 document.getElementById('maxRestartAttempts').value = '3';
                 document.getElementById('restartDelay').value = '5';
+                document.getElementById('serviceRecoveryDelay').value = '20';
                 document.getElementById('alertOnStopped').checked = true;
                 document.getElementById('alertOnRestartSuccess').checked = true;
                 document.getElementById('alertOnRestartFailed').checked = true;

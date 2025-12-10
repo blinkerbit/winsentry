@@ -31,7 +31,7 @@ class PortConfig:
     failure_count: int = 0
     
     # Recovery script configuration
-    recovery_script_delay: int = 300  # Minimum seconds between recovery script executions (default 5 minutes)
+    recovery_script_delay: int = 20  # Minimum seconds between recovery script executions (default 20 seconds)
     last_recovery_script_run: Optional[datetime] = None  # When recovery script was last executed
 
 
@@ -61,7 +61,7 @@ class PortMonitor:
                     powershell_script=config['powershell_script'],
                     powershell_commands=config['powershell_commands'],
                     enabled=config['enabled'],
-                    recovery_script_delay=config.get('recovery_script_delay', 300)
+                    recovery_script_delay=config.get('recovery_script_delay', 20)
                 )
                 self.monitored_ports[config['port']] = port_config
                 self.logger.info(f"Loaded port configuration: {config['port']} (interval: {config['interval']}s)")

@@ -38,7 +38,7 @@ class ServiceConfig:
     restart_failed: bool = False  # All restart attempts exhausted
     
     # Recovery script configuration
-    recovery_script_delay: int = 300  # Minimum seconds between recovery script executions (default 5 minutes)
+    recovery_script_delay: int = 20  # Minimum seconds between recovery script executions (default 20 seconds)
     last_recovery_script_run: Optional[datetime] = None  # When recovery script was last executed
     
     # Alert configuration

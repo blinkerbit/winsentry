@@ -195,7 +195,7 @@ class Database:
             logger.error(f"Failed to initialize database: {e}")
             raise
     
-    def save_port_config(self, port: int, interval: int, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None, enabled: bool = True, recovery_script_delay: int = 300) -> bool:
+    def save_port_config(self, port: int, interval: int, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None, enabled: bool = True, recovery_script_delay: int = 20) -> bool:
         """Save or update port configuration"""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -236,7 +236,7 @@ class Database:
                         'powershell_script': row['powershell_script'],
                         'powershell_commands': row['powershell_commands'],
                         'enabled': bool(row['enabled']),
-                        'recovery_script_delay': row['recovery_script_delay'] or 300,
+                        'recovery_script_delay': row['recovery_script_delay'] or 20,
                         'created_at': row['created_at'],
                         'updated_at': row['updated_at']
                     }
@@ -267,7 +267,7 @@ class Database:
                         'powershell_script': row['powershell_script'],
                         'powershell_commands': row['powershell_commands'],
                         'enabled': bool(row['enabled']),
-                        'recovery_script_delay': row['recovery_script_delay'] or 300,
+                        'recovery_script_delay': row['recovery_script_delay'] or 20,
                         'created_at': row['created_at'],
                         'updated_at': row['updated_at']
                     })
@@ -521,7 +521,7 @@ class Database:
             return {}
     
     # Service monitoring methods
-    def save_service_config(self, service_name: str, interval: int, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None, enabled: bool = True, recovery_script_delay: int = 300) -> bool:
+    def save_service_config(self, service_name: str, interval: int, powershell_script: Optional[str] = None, powershell_commands: Optional[str] = None, enabled: bool = True, recovery_script_delay: int = 20) -> bool:
         """Save or update service configuration"""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -562,7 +562,7 @@ class Database:
                         'powershell_script': row['powershell_script'],
                         'powershell_commands': row['powershell_commands'],
                         'enabled': bool(row['enabled']),
-                        'recovery_script_delay': row['recovery_script_delay'] or 300,
+                        'recovery_script_delay': row['recovery_script_delay'] or 20,
                         'created_at': row['created_at'],
                         'updated_at': row['updated_at']
                     }
@@ -593,7 +593,7 @@ class Database:
                         'powershell_script': row['powershell_script'],
                         'powershell_commands': row['powershell_commands'],
                         'enabled': bool(row['enabled']),
-                        'recovery_script_delay': row['recovery_script_delay'] or 300,
+                        'recovery_script_delay': row['recovery_script_delay'] or 20,
                         'created_at': row['created_at'],
                         'updated_at': row['updated_at']
                     })
