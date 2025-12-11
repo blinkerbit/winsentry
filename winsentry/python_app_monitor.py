@@ -273,8 +273,30 @@ class PythonAppMonitor:
             self.logger.error(f"Failed to remove Python app: {e}")
             return False
     
+    async def is_app_running_async(self, app_id: str) -> bool:
+        """Check if a Python application is running (async version)"""
+        def _check():
+            if app_id not in self.monitored_apps:
+                return False
+            
+            app = self.monitored_apps[app_id]
+            if app.pid is None:
+                return False
+            
+            try:
+                process = psutil.Process(app.pid)
+                return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                return False
+        
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _check)
+        except Exception:
+            return False
+    
     def is_app_running(self, app_id: str) -> bool:
-        """Check if a Python application is running"""
+        """Check if a Python application is running (sync version)"""
         if app_id not in self.monitored_apps:
             return False
         
@@ -288,8 +310,40 @@ class PythonAppMonitor:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return False
     
+    async def _find_app_process_async(self, app: PythonAppConfig) -> Optional[int]:
+        """Find the PID of a running Python app by its script path (async)"""
+        def _find():
+            try:
+                script_name = os.path.basename(app.script_path)
+                
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'cwd']):
+                    try:
+                        info = proc.info
+                        cmdline = info.get('cmdline') or []
+                        
+                        # Check if this is a Python process running our script
+                        if len(cmdline) >= 2:
+                            if 'python' in cmdline[0].lower():
+                                for arg in cmdline[1:]:
+                                    if script_name in arg or app.script_path in arg:
+                                        return info['pid']
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                return None
+                
+            except Exception as e:
+                return None
+        
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _find)
+        except Exception as e:
+            self.logger.error(f"Error finding app process: {e}")
+            return None
+    
     def _find_app_process(self, app: PythonAppConfig) -> Optional[int]:
-        """Find the PID of a running Python app by its script path"""
+        """Find the PID of a running Python app by its script path (sync version)"""
         try:
             script_name = os.path.basename(app.script_path)
             
@@ -322,7 +376,7 @@ class PythonAppMonitor:
         
         try:
             # Check if already running
-            if self.is_app_running(app_id):
+            if await self.is_app_running_async(app_id):
                 return {'success': True, 'message': f'App {app.name} is already running', 'pid': app.pid}
             
             # Build command
@@ -330,16 +384,29 @@ class PythonAppMonitor:
             if app.arguments:
                 cmd.extend(app.arguments.split())
             
-            # Start process
+            # Start process in executor to avoid blocking
+            def _start():
+                try:
+                    process = subprocess.Popen(
+                        cmd,
+                        cwd=app.working_directory,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
+                    )
+                    return process
+                except Exception as e:
+                    return str(e)
+            
             self.logger.info(f"Starting app {app.name}: {' '.join(cmd)}")
             
-            process = subprocess.Popen(
-                cmd,
-                cwd=app.working_directory,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
-            )
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _start)
+            
+            if isinstance(result, str):
+                return {'success': False, 'message': f'App failed to start: {result}'}
+            
+            process = result
             
             # Wait briefly to see if it started successfully
             await asyncio.sleep(2)
@@ -371,10 +438,10 @@ class PythonAppMonitor:
         
         app = self.monitored_apps[app_id]
         
-        try:
-            if app.pid is None:
-                return {'success': True, 'message': f'App {app.name} is not running'}
-            
+        if app.pid is None:
+            return {'success': True, 'message': f'App {app.name} is not running'}
+        
+        def _stop():
             try:
                 process = psutil.Process(app.pid)
                 
@@ -385,15 +452,23 @@ class PythonAppMonitor:
                 
                 # Wait for process to end
                 process.wait(timeout=10)
+                return True
                 
             except psutil.NoSuchProcess:
-                pass
+                return True
             except psutil.TimeoutExpired:
                 # Force kill if graceful shutdown failed
                 try:
                     process.kill()
+                    return True
                 except:
-                    pass
+                    return False
+            except Exception as e:
+                return str(e)
+        
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _stop)
             
             app.pid = None
             app.status = AppStatus.STOPPED
@@ -401,7 +476,10 @@ class PythonAppMonitor:
             self._update_app_status(app)
             self._log_app_event(app_id, 'stopped', None, 0, 'App stopped')
             
-            return {'success': True, 'message': f'App {app.name} stopped'}
+            if result is True:
+                return {'success': True, 'message': f'App {app.name} stopped'}
+            else:
+                return {'success': False, 'message': f'Error stopping app: {result}'}
             
         except Exception as e:
             self.logger.error(f"Failed to stop app {app_id}: {e}")
@@ -508,11 +586,11 @@ class PythonAppMonitor:
         app.last_check = datetime.now()
         
         was_running = app.status == AppStatus.RUNNING
-        is_running = self.is_app_running(app_id)
+        is_running = await self.is_app_running_async(app_id)
         
         if not is_running and app.pid is not None:
             # Try to find the process if PID is stale
-            found_pid = self._find_app_process(app)
+            found_pid = await self._find_app_process_async(app)
             if found_pid:
                 app.pid = found_pid
                 is_running = True

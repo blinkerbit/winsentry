@@ -181,35 +181,42 @@ class ServiceManager:
     
     async def _get_single_service(self, service_name: str) -> Dict[str, Any]:
         """Get information for a single service"""
-        try:
-            import wmi
-            import pythoncom
-            
-            # Initialize COM for this thread
-            pythoncom.CoInitialize()
-            
+        def _query():
             try:
-                c = wmi.WMI()
+                import wmi
+                import pythoncom
                 
-                # Query for specific service
-                services = c.Win32_Service(Name=service_name)
-                for service in services:
-                    return {
-                        'name': service.Name,
-                        'display_name': service.DisplayName,
-                        'state': service.State,
-                        'start_mode': service.StartMode,
-                        'process_id': service.ProcessId,
-                        'status': service.Status,
-                        'description': service.Description or '',
-                    }
+                # Initialize COM for this thread
+                pythoncom.CoInitialize()
                 
+                try:
+                    c = wmi.WMI()
+                    
+                    # Query for specific service
+                    services = c.Win32_Service(Name=service_name)
+                    for service in services:
+                        return {
+                            'name': service.Name,
+                            'display_name': service.DisplayName,
+                            'state': service.State,
+                            'start_mode': service.StartMode,
+                            'process_id': service.ProcessId,
+                            'status': service.Status,
+                            'description': service.Description or '',
+                        }
+                    
+                    return None
+                    
+                finally:
+                    # Clean up COM
+                    pythoncom.CoUninitialize()
+                
+            except Exception as e:
                 return None
-                
-            finally:
-                # Clean up COM
-                pythoncom.CoUninitialize()
-            
+        
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _query)
         except Exception as e:
             self.logger.error(f"Failed to get service {service_name}: {e}")
             return None
@@ -311,18 +318,33 @@ class ServiceManager:
     
     async def start_service(self, service_name: str) -> Dict[str, Any]:
         """Start a Windows service"""
+        def _start():
+            try:
+                win32serviceutil.StartService(service_name)
+                return True
+            except Exception as e:
+                return str(e)
+        
         try:
-            win32serviceutil.StartService(service_name)
-            await asyncio.sleep(1)  # Give service time to start
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _start)
             
-            # Check if service started successfully
-            status = win32serviceutil.QueryServiceStatus(service_name)
-            success = status[1] == win32service.SERVICE_RUNNING
-            
-            return {
-                'success': success,
-                'message': f"Service {service_name} {'started' if success else 'failed to start'}"
-            }
+            if result is True:
+                await asyncio.sleep(1)  # Give service time to start
+                
+                # Check if service started successfully
+                status = await self.get_service_status(service_name)
+                success = status == "Running"
+                
+                return {
+                    'success': success,
+                    'message': f"Service {service_name} {'started' if success else 'failed to start'}"
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': f"Failed to start service {service_name}: {result}"
+                }
             
         except Exception as e:
             self.logger.error(f"Failed to start service {service_name}: {e}")
@@ -333,18 +355,33 @@ class ServiceManager:
     
     async def stop_service(self, service_name: str) -> Dict[str, Any]:
         """Stop a Windows service"""
+        def _stop():
+            try:
+                win32serviceutil.StopService(service_name)
+                return True
+            except Exception as e:
+                return str(e)
+        
         try:
-            win32serviceutil.StopService(service_name)
-            await asyncio.sleep(1)  # Give service time to stop
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _stop)
             
-            # Check if service stopped successfully
-            status = win32serviceutil.QueryServiceStatus(service_name)
-            success = status[1] == win32service.SERVICE_STOPPED
-            
-            return {
-                'success': success,
-                'message': f"Service {service_name} {'stopped' if success else 'failed to stop'}"
-            }
+            if result is True:
+                await asyncio.sleep(1)  # Give service time to stop
+                
+                # Check if service stopped successfully
+                status = await self.get_service_status(service_name)
+                success = status == "Stopped"
+                
+                return {
+                    'success': success,
+                    'message': f"Service {service_name} {'stopped' if success else 'failed to stop'}"
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': f"Failed to stop service {service_name}: {result}"
+                }
             
         except Exception as e:
             self.logger.error(f"Failed to stop service {service_name}: {e}")
@@ -377,23 +414,29 @@ class ServiceManager:
     
     async def get_service_status(self, service_name: str) -> Optional[str]:
         """Get the current status of a service"""
-        try:
-            status = win32serviceutil.QueryServiceStatus(service_name)
-            state = status[1]
-            
-            if state == win32service.SERVICE_RUNNING:
-                return "Running"
-            elif state == win32service.SERVICE_STOPPED:
-                return "Stopped"
-            elif state == win32service.SERVICE_PAUSED:
-                return "Paused"
-            elif state == win32service.SERVICE_START_PENDING:
-                return "Starting"
-            elif state == win32service.SERVICE_STOP_PENDING:
-                return "Stopping"
-            else:
-                return "Unknown"
+        def _query():
+            try:
+                status = win32serviceutil.QueryServiceStatus(service_name)
+                state = status[1]
                 
+                if state == win32service.SERVICE_RUNNING:
+                    return "Running"
+                elif state == win32service.SERVICE_STOPPED:
+                    return "Stopped"
+                elif state == win32service.SERVICE_PAUSED:
+                    return "Paused"
+                elif state == win32service.SERVICE_START_PENDING:
+                    return "Starting"
+                elif state == win32service.SERVICE_STOP_PENDING:
+                    return "Stopping"
+                else:
+                    return "Unknown"
+            except Exception:
+                return None
+        
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _query)
         except Exception as e:
             self.logger.error(f"Failed to get status for service {service_name}: {e}")
             return None

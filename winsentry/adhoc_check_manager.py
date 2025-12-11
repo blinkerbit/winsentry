@@ -373,57 +373,89 @@ class AdhocCheckManager:
     
     async def _check_service_state(self, service_name: str) -> str:
         """Check the current state of a Windows service"""
+        def _check():
+            try:
+                import win32serviceutil
+                import win32service
+                
+                status = win32serviceutil.QueryServiceStatus(service_name)
+                state = status[1]
+                
+                if state == win32service.SERVICE_RUNNING:
+                    return 'running'
+                elif state == win32service.SERVICE_STOPPED:
+                    return 'stopped'
+                elif state == win32service.SERVICE_PAUSED:
+                    return 'paused'
+                else:
+                    return 'unknown'
+            except Exception:
+                return 'error'
+        
         try:
-            import win32serviceutil
-            import win32service
-            
-            status = win32serviceutil.QueryServiceStatus(service_name)
-            state = status[1]
-            
-            if state == win32service.SERVICE_RUNNING:
-                return 'running'
-            elif state == win32service.SERVICE_STOPPED:
-                return 'stopped'
-            elif state == win32service.SERVICE_PAUSED:
-                return 'paused'
-            else:
-                return 'unknown'
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _check)
         except Exception as e:
             self.logger.error(f"Error checking service state: {e}")
             return 'error'
-    
+
     async def _check_process_state(self, process_name: str) -> str:
         """Check if a process is running"""
+        def _check():
+            try:
+                import psutil
+                
+                for proc in psutil.process_iter(['name']):
+                    if proc.info['name'] and proc.info['name'].lower() == process_name.lower():
+                        return 'running'
+                
+                return 'stopped'
+            except Exception:
+                return 'error'
+        
         try:
-            import psutil
-            
-            for proc in psutil.process_iter(['name']):
-                if proc.info['name'] and proc.info['name'].lower() == process_name.lower():
-                    return 'running'
-            
-            return 'stopped'
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _check)
         except Exception as e:
             self.logger.error(f"Error checking process state: {e}")
             return 'error'
-    
+
     async def _start_service(self, service_name: str) -> bool:
         """Start a Windows service"""
+        def _start():
+            try:
+                import win32serviceutil
+                win32serviceutil.StartService(service_name)
+                return True
+            except Exception:
+                return False
+        
         try:
-            import win32serviceutil
-            win32serviceutil.StartService(service_name)
-            await asyncio.sleep(3)  # Wait for service to start
-            return True
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _start)
+            if result:
+                await asyncio.sleep(3)  # Wait for service to start
+            return result
         except Exception as e:
             self.logger.error(f"Error starting service {service_name}: {e}")
             return False
     
     async def _stop_service(self, service_name: str) -> bool:
         """Stop a Windows service"""
+        def _stop():
+            try:
+                import win32serviceutil
+                win32serviceutil.StopService(service_name)
+                return True
+            except Exception:
+                return False
+        
         try:
-            import win32serviceutil
-            win32serviceutil.StopService(service_name)
-            await asyncio.sleep(3)  # Wait for service to stop
-            return True
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _stop)
+            if result:
+                await asyncio.sleep(3)  # Wait for service to stop
+            return result
         except Exception as e:
             self.logger.error(f"Error stopping service {service_name}: {e}")
             return False

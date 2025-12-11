@@ -212,8 +212,13 @@ class SystemResourceMonitor:
             return False
     
     def get_cpu_usage(self) -> float:
-        """Get current CPU usage percentage"""
+        """Get current CPU usage percentage (blocking - use async version in async code)"""
         return psutil.cpu_percent(interval=1)
+    
+    async def get_cpu_usage_async(self) -> float:
+        """Get current CPU usage percentage (non-blocking)"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: psutil.cpu_percent(interval=1))
     
     def get_ram_usage(self) -> Dict:
         """Get current RAM usage"""
@@ -293,7 +298,7 @@ class SystemResourceMonitor:
             
             try:
                 if threshold.resource_type == 'cpu':
-                    current_value = self.get_cpu_usage()
+                    current_value = await self.get_cpu_usage_async()
                 elif threshold.resource_type == 'ram':
                     current_value = self.get_ram_usage()['percent']
                 elif threshold.resource_type == 'disk':

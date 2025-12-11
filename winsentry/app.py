@@ -49,7 +49,9 @@ try:
                AdhocCheckScheduleHandler,
                AdhocCheckScheduledHandler,
                AdhocCheckScheduledActionHandler,
-               AdhocCheckScheduledRunHandler
+               AdhocCheckScheduledRunHandler,
+               PortCheckNowHandler,
+               ServiceCheckNowHandler
            )
 except ImportError:
     # Fall back to relative imports (when running directly)
@@ -94,7 +96,9 @@ except ImportError:
         AdhocCheckScheduleHandler,
         AdhocCheckScheduledHandler,
         AdhocCheckScheduledActionHandler,
-        AdhocCheckScheduledRunHandler
+        AdhocCheckScheduledRunHandler,
+        PortCheckNowHandler,
+        ServiceCheckNowHandler
     )
 
 
@@ -142,6 +146,8 @@ class WinSentryApplication(web.Application):
             (r"/api/ports/monitoring-status", PortMonitoringStatusHandler, dict(port_monitor=port_monitor)),
             (r"/api/ports/kill-process", PortKillProcessHandler, dict(port_monitor=port_monitor)),
             (r"/api/ports/force-kill-process", PortForceKillProcessHandler, dict(port_monitor=port_monitor)),
+            (r"/api/ports/check-now", PortCheckNowHandler, dict(port_monitor=port_monitor)),
+            (r"/api/service-monitor/check-now", ServiceCheckNowHandler, dict(service_monitor=service_monitor)),
             (r"/static/(.*)", web.StaticFileHandler, {"path": os.path.join(os.path.dirname(__file__), "static")}),
         ]
         

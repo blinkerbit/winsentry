@@ -4,6 +4,7 @@ Email alert functionality for WinSentry
 
 import smtplib
 import logging
+import asyncio
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -197,58 +198,70 @@ WinSentry Alert System"""
     async def send_alert_email(self, port: int, recipients: List[str], template_name: str = "default", 
                              custom_data: Dict = None) -> bool:
         """Send alert email for port failure"""
+        if not self.smtp_config.get("smtp_server"):
+            self.logger.error("SMTP server not configured")
+            return False
+        
+        if not recipients:
+            self.logger.error("No recipients specified")
+            return False
+        
+        # Get template
+        template = self.email_templates.get(template_name, self.email_templates.get("default"))
+        if not template:
+            self.logger.error(f"Email template '{template_name}' not found")
+            return False
+        
+        # Prepare email data
+        email_data = {
+            "port": port,
+            "status": "OFFLINE",
+            "failure_count": custom_data.get("failure_count", 0) if custom_data else 0,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "server_name": os.environ.get("COMPUTERNAME", "Unknown Server"),
+            "message": custom_data.get("message", "") if custom_data else ""
+        }
+        
+        # Format subject and body
+        subject = template["subject"].format(**email_data)
+        body = template["body"].format(**email_data)
+        
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = f"{self.smtp_config['from_name']} <{self.smtp_config['from_email']}>"
+        msg['To'] = ", ".join(recipients)
+        msg['Subject'] = subject
+        
+        # Add body
+        msg.attach(MIMEText(body, 'plain'))
+        
+        def _send():
+            try:
+                # Send email
+                server = smtplib.SMTP(self.smtp_config["smtp_server"], self.smtp_config["smtp_port"])
+                
+                if self.smtp_config.get("use_tls", True):
+                    server.starttls()
+                
+                server.login(self.smtp_config["smtp_username"], self.smtp_config["smtp_password"])
+                
+                text = msg.as_string()
+                server.sendmail(self.smtp_config["from_email"], recipients, text)
+                server.quit()
+                return True
+            except Exception as e:
+                return str(e)
+        
         try:
-            if not self.smtp_config.get("smtp_server"):
-                self.logger.error("SMTP server not configured")
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _send)
+            
+            if result is True:
+                self.logger.info(f"Alert email sent for port {port} to {len(recipients)} recipients")
+                return True
+            else:
+                self.logger.error(f"Failed to send alert email: {result}")
                 return False
-            
-            if not recipients:
-                self.logger.error("No recipients specified")
-                return False
-            
-            # Get template
-            template = self.email_templates.get(template_name, self.email_templates.get("default"))
-            if not template:
-                self.logger.error(f"Email template '{template_name}' not found")
-                return False
-            
-            # Prepare email data
-            email_data = {
-                "port": port,
-                "status": "OFFLINE",
-                "failure_count": custom_data.get("failure_count", 0) if custom_data else 0,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "server_name": os.environ.get("COMPUTERNAME", "Unknown Server"),
-                "message": custom_data.get("message", "") if custom_data else ""
-            }
-            
-            # Format subject and body
-            subject = template["subject"].format(**email_data)
-            body = template["body"].format(**email_data)
-            
-            # Create message
-            msg = MIMEMultipart()
-            msg['From'] = f"{self.smtp_config['from_name']} <{self.smtp_config['from_email']}>"
-            msg['To'] = ", ".join(recipients)
-            msg['Subject'] = subject
-            
-            # Add body
-            msg.attach(MIMEText(body, 'plain'))
-            
-            # Send email
-            server = smtplib.SMTP(self.smtp_config["smtp_server"], self.smtp_config["smtp_port"])
-            
-            if self.smtp_config.get("use_tls", True):
-                server.starttls()
-            
-            server.login(self.smtp_config["smtp_username"], self.smtp_config["smtp_password"])
-            
-            text = msg.as_string()
-            server.sendmail(self.smtp_config["from_email"], recipients, text)
-            server.quit()
-            
-            self.logger.info(f"Alert email sent for port {port} to {len(recipients)} recipients")
-            return True
             
         except Exception as e:
             self.logger.error(f"Failed to send alert email: {e}")
@@ -319,58 +332,70 @@ WinSentry Alert System"""
     async def send_service_alert_email(self, service_name: str, recipients: List[str], template_name: str = "service_default", 
                                      custom_data: Dict = None) -> bool:
         """Send alert email for service failure"""
+        if not self.smtp_config.get("smtp_server"):
+            self.logger.error("SMTP server not configured")
+            return False
+        
+        if not recipients:
+            self.logger.error("No recipients specified")
+            return False
+        
+        # Get template
+        template = self.email_templates.get(template_name, self.email_templates.get("service_default"))
+        if not template:
+            self.logger.error(f"Email template '{template_name}' not found")
+            return False
+        
+        # Prepare email data
+        email_data = {
+            "service_name": service_name,
+            "status": "STOPPED",
+            "failure_count": custom_data.get("failure_count", 0) if custom_data else 0,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "server_name": os.environ.get("COMPUTERNAME", "Unknown Server"),
+            "message": custom_data.get("message", "") if custom_data else ""
+        }
+        
+        # Format subject and body
+        subject = template["subject"].format(**email_data)
+        body = template["body"].format(**email_data)
+        
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = f"{self.smtp_config['from_name']} <{self.smtp_config['from_email']}>"
+        msg['To'] = ", ".join(recipients)
+        msg['Subject'] = subject
+        
+        # Add body
+        msg.attach(MIMEText(body, 'plain'))
+        
+        def _send():
+            try:
+                # Send email
+                server = smtplib.SMTP(self.smtp_config["smtp_server"], self.smtp_config["smtp_port"])
+                
+                if self.smtp_config.get("use_tls", True):
+                    server.starttls()
+                
+                server.login(self.smtp_config["smtp_username"], self.smtp_config["smtp_password"])
+                
+                text = msg.as_string()
+                server.sendmail(self.smtp_config["from_email"], recipients, text)
+                server.quit()
+                return True
+            except Exception as e:
+                return str(e)
+        
         try:
-            if not self.smtp_config.get("smtp_server"):
-                self.logger.error("SMTP server not configured")
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _send)
+            
+            if result is True:
+                self.logger.info(f"Alert email sent for service {service_name} to {len(recipients)} recipients")
+                return True
+            else:
+                self.logger.error(f"Failed to send service alert email: {result}")
                 return False
-            
-            if not recipients:
-                self.logger.error("No recipients specified")
-                return False
-            
-            # Get template
-            template = self.email_templates.get(template_name, self.email_templates.get("service_default"))
-            if not template:
-                self.logger.error(f"Email template '{template_name}' not found")
-                return False
-            
-            # Prepare email data
-            email_data = {
-                "service_name": service_name,
-                "status": "STOPPED",
-                "failure_count": custom_data.get("failure_count", 0) if custom_data else 0,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "server_name": os.environ.get("COMPUTERNAME", "Unknown Server"),
-                "message": custom_data.get("message", "") if custom_data else ""
-            }
-            
-            # Format subject and body
-            subject = template["subject"].format(**email_data)
-            body = template["body"].format(**email_data)
-            
-            # Create message
-            msg = MIMEMultipart()
-            msg['From'] = f"{self.smtp_config['from_name']} <{self.smtp_config['from_email']}>"
-            msg['To'] = ", ".join(recipients)
-            msg['Subject'] = subject
-            
-            # Add body
-            msg.attach(MIMEText(body, 'plain'))
-            
-            # Send email
-            server = smtplib.SMTP(self.smtp_config["smtp_server"], self.smtp_config["smtp_port"])
-            
-            if self.smtp_config.get("use_tls", True):
-                server.starttls()
-            
-            server.login(self.smtp_config["smtp_username"], self.smtp_config["smtp_password"])
-            
-            text = msg.as_string()
-            server.sendmail(self.smtp_config["from_email"], recipients, text)
-            server.quit()
-            
-            self.logger.info(f"Alert email sent for service {service_name} to {len(recipients)} recipients")
-            return True
             
         except Exception as e:
             self.logger.error(f"Failed to send service alert email: {e}")

@@ -74,10 +74,11 @@ class ServiceMonitor:
                     interval=config['interval'],
                     powershell_script=config['powershell_script'],
                     powershell_commands=config['powershell_commands'],
-                    enabled=config['enabled']
+                    enabled=config['enabled'],
+                    recovery_script_delay=config.get('recovery_script_delay', 20)
                 )
                 self.monitored_services[config['service_name']] = service_config
-                self.logger.info(f"Loaded service configuration: {config['service_name']} (interval: {config['interval']}s)")
+                self.logger.info(f"Loaded service configuration: {config['service_name']} (interval: {config['interval']}s, recovery_delay: {service_config.recovery_script_delay}s)")
         except Exception as e:
             self.logger.error(f"Failed to load service configurations: {e}")
         
@@ -707,7 +708,11 @@ $env:PYTHONUTF8 = "1"
                 await asyncio.sleep(5)  # Wait before retrying
     
     def get_monitored_services(self) -> List[Dict]:
-        """Get list of monitored services with their current status"""
+        """Get list of monitored services with their current status (synchronous version)
+        
+        Note: This method contains blocking subprocess calls. For async contexts,
+        use get_monitored_services_async() instead.
+        """
         services = []
         for service_name, config in self.monitored_services.items():
             # Fetch live current status for this service
@@ -764,6 +769,14 @@ $env:PYTHONUTF8 = "1"
             })
         return services
     
+    async def get_monitored_services_async(self) -> List[Dict]:
+        """Get list of monitored services with their current status (async version)
+        
+        This version uses run_in_executor to prevent blocking the event loop.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.get_monitored_services)
+    
     def get_service_logs(self, service_name: Optional[str] = None) -> List[Dict]:
         """Get logs for service monitoring from database"""
         try:
@@ -788,65 +801,72 @@ $env:PYTHONUTF8 = "1"
             self.logger.error(f"Failed to get database stats: {e}")
             return {}
     
-    async def get_service_processes(self, service_name: str) -> List[Dict]:
+    async def get_service_processes_detailed(self, service_name: str) -> List[Dict]:
         """Get all processes for a specific Windows service with detailed resource usage"""
+        def _get_processes():
+            try:
+                import psutil
+                processes = []
+                
+                # Get all processes and filter by service name
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'username']):
+                    try:
+                        # Check if this process belongs to the service
+                        # We'll use the service name to match against process name or command line
+                        proc_info = proc.info
+                        process_name = proc_info['name'].lower()
+                        cmdline = ' '.join(proc_info['cmdline']).lower() if proc_info['cmdline'] else ''
+                        
+                        # Check if service name appears in process name or command line
+                        cmdline_list = proc_info['cmdline'] or []
+                        if (service_name.lower() in process_name or 
+                            service_name.lower() in cmdline or
+                            any(service_name.lower() in arg.lower() for arg in cmdline_list)):
+                            
+                            process = psutil.Process(proc_info['pid'])
+                            
+                            # Get CPU and memory usage
+                            cpu_percent = process.cpu_percent()
+                            memory_info = process.memory_info()
+                            memory_percent = process.memory_percent()
+                            
+                            # Get additional process details
+                            try:
+                                cmdline_full = process.cmdline()
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                cmdline_full = []
+                            
+                            try:
+                                username = process.username()
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                username = "Unknown"
+                            
+                            processes.append({
+                                'pid': proc_info['pid'],
+                                'name': proc_info['name'],
+                                'status': process.status(),
+                                'create_time': process.create_time(),
+                                'cpu_percent': round(cpu_percent, 2),
+                                'memory_rss': memory_info.rss,  # Resident Set Size in bytes
+                                'memory_vms': memory_info.vms,  # Virtual Memory Size in bytes
+                                'memory_percent': round(memory_percent, 2),
+                                'cmdline': cmdline_full,
+                                'username': username,
+                                'service_name': service_name
+                            })
+                            
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        # Process may have died or we don't have access
+                        continue
+                
+                return processes
+                
+            except Exception as e:
+                return []
+        
         try:
-            import psutil
-            processes = []
-            
-            # Get all processes and filter by service name
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'username']):
-                try:
-                    # Check if this process belongs to the service
-                    # We'll use the service name to match against process name or command line
-                    proc_info = proc.info
-                    process_name = proc_info['name'].lower()
-                    cmdline = ' '.join(proc_info['cmdline']).lower() if proc_info['cmdline'] else ''
-                    
-                    # Check if service name appears in process name or command line
-                    cmdline_list = proc_info['cmdline'] or []
-                    if (service_name.lower() in process_name or 
-                        service_name.lower() in cmdline or
-                        any(service_name.lower() in arg.lower() for arg in cmdline_list)):
-                        
-                        process = psutil.Process(proc_info['pid'])
-                        
-                        # Get CPU and memory usage
-                        cpu_percent = process.cpu_percent()
-                        memory_info = process.memory_info()
-                        memory_percent = process.memory_percent()
-                        
-                        # Get additional process details
-                        try:
-                            cmdline_full = process.cmdline()
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            cmdline_full = []
-                        
-                        try:
-                            username = process.username()
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            username = "Unknown"
-                        
-                        processes.append({
-                            'pid': proc_info['pid'],
-                            'name': proc_info['name'],
-                            'status': process.status(),
-                            'create_time': process.create_time(),
-                            'cpu_percent': round(cpu_percent, 2),
-                            'memory_rss': memory_info.rss,  # Resident Set Size in bytes
-                            'memory_vms': memory_info.vms,  # Virtual Memory Size in bytes
-                            'memory_percent': round(memory_percent, 2),
-                            'cmdline': cmdline_full,
-                            'username': username,
-                            'service_name': service_name
-                        })
-                        
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    # Process may have died or we don't have access
-                    continue
-            
-            return processes
-            
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _get_processes)
         except Exception as e:
             self.logger.error(f"Failed to get processes for service {service_name}: {e}")
             return []
@@ -940,38 +960,45 @@ $env:PYTHONUTF8 = "1"
     
     async def get_service_processes(self, service_name: str) -> List[Dict]:
         """Get processes associated with a service"""
+        def _get_processes():
+            try:
+                import psutil
+                
+                processes = []
+                
+                # Get all running processes
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'username', 'cpu_percent', 'memory_percent', 'memory_info']):
+                    try:
+                        proc_info = proc.info
+                        
+                        # Check if this process is related to the service
+                        # This is a simplified check - in a real implementation, you'd use WMI or other methods
+                        # to get the actual service-process relationship
+                        if (service_name.lower() in proc_info['name'].lower() or 
+                            (proc_info['cmdline'] and service_name.lower() in ' '.join(proc_info['cmdline']).lower())):
+                            
+                            processes.append({
+                                'pid': proc_info['pid'],
+                                'name': proc_info['name'],
+                                'cmdline': ' '.join(proc_info['cmdline']) if proc_info['cmdline'] else None,
+                                'username': proc_info['username'],
+                                'cpu_percent': proc_info['cpu_percent'] or 0.0,
+                                'memory_percent': proc_info['memory_percent'] or 0.0,
+                                'memory_info': proc_info['memory_info'].rss if proc_info['memory_info'] else 0,
+                                'memory_rss': proc_info['memory_info'].rss if proc_info['memory_info'] else 0
+                            })
+                            
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        continue
+                
+                return processes
+                
+            except Exception as e:
+                return []
+        
         try:
-            import psutil
-            
-            processes = []
-            
-            # Get all running processes
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'username', 'cpu_percent', 'memory_percent', 'memory_info']):
-                try:
-                    proc_info = proc.info
-                    
-                    # Check if this process is related to the service
-                    # This is a simplified check - in a real implementation, you'd use WMI or other methods
-                    # to get the actual service-process relationship
-                    if (service_name.lower() in proc_info['name'].lower() or 
-                        (proc_info['cmdline'] and service_name.lower() in ' '.join(proc_info['cmdline']).lower())):
-                        
-                        processes.append({
-                            'pid': proc_info['pid'],
-                            'name': proc_info['name'],
-                            'cmdline': ' '.join(proc_info['cmdline']) if proc_info['cmdline'] else None,
-                            'username': proc_info['username'],
-                            'cpu_percent': proc_info['cpu_percent'] or 0.0,
-                            'memory_percent': proc_info['memory_percent'] or 0.0,
-                            'memory_info': proc_info['memory_info'].rss if proc_info['memory_info'] else 0,
-                            'memory_rss': proc_info['memory_info'].rss if proc_info['memory_info'] else 0
-                        })
-                        
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    continue
-            
-            return processes
-            
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _get_processes)
         except Exception as e:
             self.logger.error(f"Failed to get processes for service {service_name}: {e}")
             return []

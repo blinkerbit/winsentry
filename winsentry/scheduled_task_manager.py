@@ -435,92 +435,113 @@ class ScheduledTaskManager:
     async def _run_script(self, script_path: str, 
                           working_directory: Optional[str]) -> Dict:
         """Run a script file"""
+        def _execute():
+            try:
+                cwd = working_directory or os.path.dirname(script_path)
+                
+                # Determine how to run based on extension
+                ext = os.path.splitext(script_path)[1].lower()
+                
+                if ext == '.ps1':
+                    cmd = ['powershell.exe', '-ExecutionPolicy', 'Bypass', '-File', script_path]
+                elif ext == '.py':
+                    cmd = ['python', script_path]
+                elif ext == '.bat' or ext == '.cmd':
+                    cmd = ['cmd.exe', '/c', script_path]
+                else:
+                    cmd = [script_path]
+                
+                result = subprocess.run(
+                    cmd,
+                    cwd=cwd,
+                    capture_output=True,
+                    text=True,
+                    timeout=3600,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                
+                return {
+                    'success': result.returncode == 0,
+                    'output': result.stdout,
+                    'error': result.stderr
+                }
+                
+            except subprocess.TimeoutExpired:
+                return {'success': False, 'error': 'Script execution timed out'}
+            except Exception as e:
+                return {'success': False, 'error': str(e)}
+        
         try:
-            cwd = working_directory or os.path.dirname(script_path)
-            
-            # Determine how to run based on extension
-            ext = os.path.splitext(script_path)[1].lower()
-            
-            if ext == '.ps1':
-                cmd = ['powershell.exe', '-ExecutionPolicy', 'Bypass', '-File', script_path]
-            elif ext == '.py':
-                cmd = ['python', script_path]
-            elif ext == '.bat' or ext == '.cmd':
-                cmd = ['cmd.exe', '/c', script_path]
-            else:
-                cmd = [script_path]
-            
-            result = subprocess.run(
-                cmd,
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=3600,
-                encoding='utf-8',
-                errors='replace'
-            )
-            
-            return {
-                'success': result.returncode == 0,
-                'output': result.stdout,
-                'error': result.stderr
-            }
-            
-        except subprocess.TimeoutExpired:
-            return {'success': False, 'error': 'Script execution timed out'}
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _execute)
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
     async def _run_command(self, command: str, 
                            working_directory: Optional[str]) -> Dict:
         """Run a shell command"""
+        def _execute():
+            try:
+                result = subprocess.run(
+                    command,
+                    shell=True,
+                    cwd=working_directory,
+                    capture_output=True,
+                    text=True,
+                    timeout=3600,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                
+                return {
+                    'success': result.returncode == 0,
+                    'output': result.stdout,
+                    'error': result.stderr
+                }
+                
+            except subprocess.TimeoutExpired:
+                return {'success': False, 'error': 'Command execution timed out'}
+            except Exception as e:
+                return {'success': False, 'error': str(e)}
+        
         try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                cwd=working_directory,
-                capture_output=True,
-                text=True,
-                timeout=3600,
-                encoding='utf-8',
-                errors='replace'
-            )
-            
-            return {
-                'success': result.returncode == 0,
-                'output': result.stdout,
-                'error': result.stderr
-            }
-            
-        except subprocess.TimeoutExpired:
-            return {'success': False, 'error': 'Command execution timed out'}
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _execute)
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
     async def _run_powershell(self, script: str, 
                                working_directory: Optional[str]) -> Dict:
         """Run PowerShell commands"""
+        def _execute():
+            try:
+                cmd = ['powershell.exe', '-ExecutionPolicy', 'Bypass', '-Command', script]
+                
+                result = subprocess.run(
+                    cmd,
+                    cwd=working_directory,
+                    capture_output=True,
+                    text=True,
+                    timeout=3600,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                
+                return {
+                    'success': result.returncode == 0,
+                    'output': result.stdout,
+                    'error': result.stderr
+                }
+                
+            except subprocess.TimeoutExpired:
+                return {'success': False, 'error': 'PowerShell execution timed out'}
+            except Exception as e:
+                return {'success': False, 'error': str(e)}
+        
         try:
-            cmd = ['powershell.exe', '-ExecutionPolicy', 'Bypass', '-Command', script]
-            
-            result = subprocess.run(
-                cmd,
-                cwd=working_directory,
-                capture_output=True,
-                text=True,
-                timeout=3600,
-                encoding='utf-8',
-                errors='replace'
-            )
-            
-            return {
-                'success': result.returncode == 0,
-                'output': result.stdout,
-                'error': result.stderr
-            }
-            
-        except subprocess.TimeoutExpired:
-            return {'success': False, 'error': 'PowerShell execution timed out'}
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _execute)
         except Exception as e:
             return {'success': False, 'error': str(e)}
     

@@ -265,11 +265,19 @@ class PortMonitor:
 
     async def is_port_in_use(self, port: int) -> bool:
         """Check if a port is in use"""
+        def _check_port():
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.settimeout(2)
+                    result = sock.connect_ex(('localhost', port))
+                    return result == 0
+            except Exception as e:
+                return False
+        
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(1)
-                result = sock.connect_ex(('localhost', port))
-                return result == 0
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _check_port)
+            return result
         except Exception as e:
             self.logger.error(f"Error checking port {port}: {e}")
             return False
@@ -825,97 +833,142 @@ $env:PYTHONUTF8 = "1"
     
     async def get_processes_on_port(self, port: int) -> List[Dict]:
         """Get all processes using a specific port with detailed resource usage"""
+        def _get_processes():
+            try:
+                import psutil
+                processes = []
+                
+                for conn in psutil.net_connections(kind='inet'):
+                    if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN:
+                        try:
+                            process = psutil.Process(conn.pid)
+                            
+                            # Get CPU and memory usage
+                            cpu_percent = process.cpu_percent()
+                            memory_info = process.memory_info()
+                            memory_percent = process.memory_percent()
+                            
+                            # Get additional process details
+                            try:
+                                cmdline = process.cmdline()
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                cmdline = []
+                            
+                            try:
+                                username = process.username()
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                username = "Unknown"
+                            
+                            processes.append({
+                                'pid': conn.pid,
+                                'name': process.name(),
+                                'status': process.status(),
+                                'create_time': process.create_time(),
+                                'cpu_percent': round(cpu_percent, 2),
+                                'memory_rss': memory_info.rss,  # Resident Set Size in bytes
+                                'memory_vms': memory_info.vms,  # Virtual Memory Size in bytes
+                                'memory_percent': round(memory_percent, 2),
+                                'cmdline': cmdline,
+                                'username': username,
+                                'port': port
+                            })
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            # Process may have died or we don't have access
+                            continue
+                
+                return processes
+                
+            except Exception as e:
+                return []
+        
         try:
-            import psutil
-            processes = []
-            
-            for conn in psutil.net_connections(kind='inet'):
-                if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN:
-                    try:
-                        process = psutil.Process(conn.pid)
-                        
-                        # Get CPU and memory usage
-                        cpu_percent = process.cpu_percent()
-                        memory_info = process.memory_info()
-                        memory_percent = process.memory_percent()
-                        
-                        # Get additional process details
-                        try:
-                            cmdline = process.cmdline()
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            cmdline = []
-                        
-                        try:
-                            username = process.username()
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            username = "Unknown"
-                        
-                        processes.append({
-                            'pid': conn.pid,
-                            'name': process.name(),
-                            'status': process.status(),
-                            'create_time': process.create_time(),
-                            'cpu_percent': round(cpu_percent, 2),
-                            'memory_rss': memory_info.rss,  # Resident Set Size in bytes
-                            'memory_vms': memory_info.vms,  # Virtual Memory Size in bytes
-                            'memory_percent': round(memory_percent, 2),
-                            'cmdline': cmdline,
-                            'username': username,
-                            'port': port
-                        })
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        # Process may have died or we don't have access
-                        continue
-            
-            return processes
-            
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _get_processes)
         except Exception as e:
             self.logger.error(f"Failed to get processes on port {port}: {e}")
             return []
     
     async def kill_process(self, pid: int) -> bool:
         """Kill a process gracefully"""
-        try:
-            import psutil
-            process = psutil.Process(pid)
-            process.terminate()
-            
-            # Wait for process to terminate
+        def _kill():
             try:
-                process.wait(timeout=5)
-                self.logger.info(f"Process {pid} terminated gracefully")
-                return True
-            except psutil.TimeoutExpired:
-                # If it doesn't terminate, force kill it
-                process.kill()
-                self.logger.info(f"Process {pid} force killed after timeout")
-                return True
+                import psutil
+                process = psutil.Process(pid)
+                process.terminate()
                 
-        except psutil.NoSuchProcess:
-            self.logger.warning(f"Process {pid} no longer exists")
-            return True
-        except psutil.AccessDenied:
-            self.logger.error(f"Access denied when trying to kill process {pid}")
-            return False
+                # Wait for process to terminate
+                try:
+                    process.wait(timeout=5)
+                    return ('success', 'graceful')
+                except psutil.TimeoutExpired:
+                    # If it doesn't terminate, force kill it
+                    process.kill()
+                    return ('success', 'force')
+                    
+            except psutil.NoSuchProcess:
+                return ('not_found', None)
+            except psutil.AccessDenied:
+                return ('access_denied', None)
+            except Exception as e:
+                return ('error', str(e))
+        
+        try:
+            loop = asyncio.get_event_loop()
+            result, detail = await loop.run_in_executor(None, _kill)
+            
+            if result == 'success':
+                if detail == 'graceful':
+                    self.logger.info(f"Process {pid} terminated gracefully")
+                else:
+                    self.logger.info(f"Process {pid} force killed after timeout")
+                return True
+            elif result == 'not_found':
+                self.logger.warning(f"Process {pid} no longer exists")
+                return True
+            elif result == 'access_denied':
+                self.logger.error(f"Access denied when trying to kill process {pid}")
+                return False
+            else:
+                self.logger.error(f"Failed to kill process {pid}: {detail}")
+                return False
+                
         except Exception as e:
             self.logger.error(f"Failed to kill process {pid}: {e}")
             return False
     
     async def force_kill_process(self, pid: int) -> bool:
         """Force kill a process immediately"""
+        def _kill():
+            try:
+                import psutil
+                process = psutil.Process(pid)
+                process.kill()
+                return ('success', None)
+                
+            except psutil.NoSuchProcess:
+                return ('not_found', None)
+            except psutil.AccessDenied:
+                return ('access_denied', None)
+            except Exception as e:
+                return ('error', str(e))
+        
         try:
-            import psutil
-            process = psutil.Process(pid)
-            process.kill()
-            self.logger.info(f"Process {pid} force killed")
-            return True
+            loop = asyncio.get_event_loop()
+            result, detail = await loop.run_in_executor(None, _kill)
             
-        except psutil.NoSuchProcess:
-            self.logger.warning(f"Process {pid} no longer exists")
-            return True
-        except psutil.AccessDenied:
-            self.logger.error(f"Access denied when trying to force kill process {pid}")
-            return False
+            if result == 'success':
+                self.logger.info(f"Process {pid} force killed")
+                return True
+            elif result == 'not_found':
+                self.logger.warning(f"Process {pid} no longer exists")
+                return True
+            elif result == 'access_denied':
+                self.logger.error(f"Access denied when trying to force kill process {pid}")
+                return False
+            else:
+                self.logger.error(f"Failed to force kill process {pid}: {detail}")
+                return False
+                
         except Exception as e:
             self.logger.error(f"Failed to force kill process {pid}: {e}")
             return False

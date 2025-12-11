@@ -1301,6 +1301,24 @@
             }
         }
 
+        async function checkPortNow(port) {
+            try {
+                const response = await apiCall('/api/ports/check-now', {
+                    method: 'POST',
+                    body: JSON.stringify({ port: port })
+                });
+
+                if (response.success) {
+                    showAlert('success', response.message);
+                    refreshPortMonitors();
+                } else {
+                    showAlert('error', response.error || 'Failed to check port');
+                }
+            } catch (error) {
+                showAlert('error', 'Failed to check port: ' + error.message);
+            }
+        }
+
         function displayPortMonitors(ports) {
             const tbody = document.getElementById('portTableBody');
             tbody.innerHTML = '';
@@ -1327,6 +1345,7 @@
                     <td>${port.interval}s</td>
                     <td><span class="${port.failure_count > 0 ? 'text-red-600' : ''}">${port.failure_count || 0}</span></td>
                     <td>
+                        <button class="btn btn-sm btn-success" onclick="checkPortNow(${port.port})" title="Check status immediately">Check</button>
                         <button class="btn btn-sm btn-primary" onclick="viewPortDetails(${port.port})" title="View detailed information">Details</button>
                         <button class="btn btn-sm btn-info" onclick="editPortConfig(${port.port})" title="Edit port configuration">Edit</button>
                         <button class="btn btn-sm btn-warning" onclick="killProcessesOnPort(${port.port})" title="Kill processes on this port">Kill</button>
@@ -2399,6 +2418,7 @@
                     <td>${service.interval}s</td>
                     <td>${service.failure_count || 0}</td>
                     <td>
+                        <button class="btn btn-sm btn-success" onclick="checkServiceNow('${service.service_name}')" title="Check status immediately">Check</button>
                         <button class="btn btn-sm btn-danger" onclick="removeServiceMonitor('${service.service_name}')">Remove</button>
                     </td>
                 `;
@@ -2440,6 +2460,24 @@
                 } catch (error) {
                     showAlert('error', 'Failed to remove service monitor');
                 }
+            }
+        }
+
+        async function checkServiceNow(serviceName) {
+            try {
+                const response = await apiCall('/api/service-monitor/check-now', {
+                    method: 'POST',
+                    body: JSON.stringify({ service_name: serviceName })
+                });
+
+                if (response.success) {
+                    showAlert('success', response.message);
+                    refreshServiceMonitors();
+                } else {
+                    showAlert('error', response.error || 'Failed to check service');
+                }
+            } catch (error) {
+                showAlert('error', 'Failed to check service: ' + error.message);
             }
         }
 

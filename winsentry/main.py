@@ -8,6 +8,13 @@ import sys
 from tornado import web, ioloop
 from tornado.options import define, options, parse_command_line
 
+# Try to use winloop for better performance on Windows
+try:
+    import winloop
+    winloop.install()
+    USING_WINLOOP = True
+except ImportError:
+    USING_WINLOOP = False
 
 # Try absolute imports first (when installed as package)
 from winsentry.app import WinSentryApplication
@@ -50,6 +57,7 @@ def main():
         
         # Start the server
         logger.info(f"Starting WinSentry on port {options.port}")
+        logger.info(f"Using winloop: {USING_WINLOOP}")
         app.listen(options.port)
         
         # Start the event loop

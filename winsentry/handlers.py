@@ -465,6 +465,113 @@ class DatabaseStatsHandler(BaseHandler):
             }, 500)
 
 
+class PortCheckNowHandler(BaseHandler):
+    """Handle immediate port status check requests"""
+    
+    def initialize(self, port_monitor):
+        self.port_monitor = port_monitor
+    
+    async def post(self):
+        """Trigger immediate status check for a specific port"""
+        try:
+            data = json.loads(self.request.body)
+            port = int(data.get('port'))
+            
+            if not port:
+                self.write_json({
+                    'success': False,
+                    'error': 'Port number is required'
+                }, 400)
+                return
+            
+            # Check if port is being monitored
+            if port not in self.port_monitor.monitored_ports:
+                self.write_json({
+                    'success': False,
+                    'error': f'Port {port} is not being monitored'
+                }, 404)
+                return
+            
+            # Perform immediate status check
+            is_online = await self.port_monitor.check_port(port)
+            
+            # Get updated status
+            config = self.port_monitor.monitored_ports.get(port)
+            status = 'online' if config.last_status else 'offline'
+            
+            self.write_json({
+                'success': True,
+                'port': port,
+                'status': status,
+                'last_check': config.last_check.isoformat() if config.last_check else None,
+                'failure_count': config.failure_count,
+                'message': f'Port {port} checked: {status.upper()}'
+            })
+            
+        except ValueError:
+            self.write_json({
+                'success': False,
+                'error': 'Invalid port number'
+            }, 400)
+        except Exception as e:
+            logger.error(f"Failed to check port: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class ServiceCheckNowHandler(BaseHandler):
+    """Handle immediate service status check requests"""
+    
+    def initialize(self, service_monitor):
+        self.service_monitor = service_monitor
+    
+    async def post(self):
+        """Trigger immediate status check for a specific service"""
+        try:
+            data = json.loads(self.request.body)
+            service_name = data.get('service_name')
+            
+            if not service_name:
+                self.write_json({
+                    'success': False,
+                    'error': 'Service name is required'
+                }, 400)
+                return
+            
+            # Check if service is being monitored
+            if service_name not in self.service_monitor.monitored_services:
+                self.write_json({
+                    'success': False,
+                    'error': f'Service {service_name} is not being monitored'
+                }, 404)
+                return
+            
+            # Perform immediate status check
+            await self.service_monitor.check_service(service_name)
+            
+            # Get updated status
+            config = self.service_monitor.monitored_services.get(service_name)
+            status = config.last_status if config.last_status else 'unknown'
+            
+            self.write_json({
+                'success': True,
+                'service_name': service_name,
+                'status': status,
+                'last_check': config.last_check.isoformat() if config.last_check else None,
+                'failure_count': config.failure_count,
+                'message': f'Service {service_name} checked: {status.upper()}'
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to check service: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
 class PowerShellExecuteHandler(BaseHandler):
     """Handle PowerShell command execution"""
     
@@ -566,7 +673,7 @@ class ServiceMonitorHandler(BaseHandler):
     async def get(self):
         """Get monitored services"""
         try:
-            services = self.service_monitor.get_monitored_services()
+            services = await self.service_monitor.get_monitored_services_async()
             self.write_json({
                 'success': True,
                 'services': services
