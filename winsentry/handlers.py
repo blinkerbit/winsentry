@@ -2082,6 +2082,153 @@ class EmailTestHandler(BaseHandler):
             }, 500)
 
 
+class EmailTestAlertHandler(BaseHandler):
+    """Handle sending test alerts for monitoring points"""
+    
+    def initialize(self, port_monitor):
+        self.port_monitor = port_monitor
+    
+    async def post(self):
+        """Send a test alert for a port or service"""
+        try:
+            data = self.get_json_body()
+            alert_type = data.get('type', 'port')
+            recipients = data.get('recipients', [])
+            
+            if not recipients:
+                self.write_json({
+                    'success': False,
+                    'error': 'No recipients specified'
+                }, 400)
+                return
+            
+            # Ensure recipients is a list
+            if isinstance(recipients, str):
+                recipients = [r.strip() for r in recipients.split(',') if r.strip()]
+            
+            if alert_type == 'port':
+                port = data.get('port', 0)
+                success = await self.port_monitor.email_alert.send_alert_email(
+                    port=port,
+                    recipients=recipients,
+                    template_name='default',
+                    custom_data={
+                        'status': 'TEST ALERT',
+                        'severity': 'INFO',
+                        'message': f'This is a test alert for port {port} from WinSentry',
+                        'failure_count': 0,
+                        'server_name': 'WinSentry Test',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                )
+                
+            elif alert_type == 'service':
+                service_name = data.get('service_name', 'TestService')
+                success = await self.port_monitor.email_alert.send_service_alert_email(
+                    service_name=service_name,
+                    recipients=recipients,
+                    template_name='service_default',
+                    custom_data={
+                        'status': 'TEST ALERT',
+                        'severity': 'INFO',
+                        'message': f'This is a test alert for service {service_name} from WinSentry',
+                        'failure_count': 0,
+                        'server_name': 'WinSentry Test',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                )
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Invalid alert type: {alert_type}'
+                }, 400)
+                return
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Test alert sent to {len(recipients)} recipients'
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': 'Failed to send test alert. Check SMTP configuration.'
+                })
+                
+        except Exception as e:
+            logger.error(f"Failed to send test alert: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+class SinglePortEmailConfigHandler(BaseHandler):
+    """Handle email configuration for a single port"""
+    
+    def initialize(self, port_monitor):
+        self.port_monitor = port_monitor
+    
+    async def get(self):
+        """Get email configuration for a specific port"""
+        try:
+            port = self.get_argument('port', None)
+            if not port:
+                self.write_json({
+                    'success': False,
+                    'error': 'Port number is required'
+                }, 400)
+                return
+            
+            config = self.port_monitor.email_alert.get_port_email_config(int(port))
+            self.write_json({
+                'success': True,
+                'config': config
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to get port email config: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+    
+    async def post(self):
+        """Save email configuration for a specific port"""
+        try:
+            data = self.get_json_body()
+            port = data.get('port')
+            config = data.get('config', {})
+            
+            if not port:
+                self.write_json({
+                    'success': False,
+                    'error': 'Port number is required'
+                }, 400)
+                return
+            
+            success = self.port_monitor.email_alert.save_port_email_config(int(port), config)
+            
+            if success:
+                self.write_json({
+                    'success': True,
+                    'message': f'Email configuration saved for port {port}'
+                })
+            else:
+                self.write_json({
+                    'success': False,
+                    'error': f'Failed to save email configuration for port {port}'
+                })
+                
+        except Exception as e:
+            logger.error(f"Failed to save port email config: {e}")
+            self.write_json({
+                'success': False,
+                'error': str(e)
+            }, 500)
+
+
+
 class SystemResourcesHandler(BaseHandler):
     """Handle system-wide resource monitoring requests"""
     

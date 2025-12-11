@@ -692,15 +692,38 @@
                         <div class="form-group">
                             <label class="form-label" for="portRecoveryDelay">Recovery Script Delay (seconds)</label>
                             <input type="number" id="portRecoveryDelay" class="form-input" value="20" min="5">
-                            <small class="text-gray-500">Minimum time between recovery script executions (default:
-                                20s)</small>
+                            <small class="text-gray-500">Minimum time between recovery script executions</small>
                         </div>
-                        <div class="form-group" style="display: flex; align-items: center; padding-top: 20px;">
-                            <label>
-                                <input type="checkbox" id="portEnabled" class="form-checkbox" checked>
-                                Enable monitoring
-                            </label>
+                        <div class="form-group">
+                            <label class="form-label" for="portScriptFailures">Script Trigger After Failures</label>
+                            <input type="number" id="portScriptFailures" class="form-input" value="3" min="1">
+                            <small class="text-gray-500">Run recovery after this many consecutive failures</small>
                         </div>
+                    </div>
+
+                    <!-- Email Alert Settings -->
+                    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+                        <h4 style="margin-bottom: 12px; color: #374151; font-size: 14px;">📧 Email Alert Settings</h4>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="form-group">
+                                <label class="form-label" for="portEmailRecipients">Email Recipients</label>
+                                <input type="text" id="portEmailRecipients" class="form-input"
+                                    placeholder="email1@example.com, email2@example.com">
+                                <small class="text-gray-500">Comma-separated list of email addresses</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="portEmailFailures">Alert After Failures</label>
+                                <input type="number" id="portEmailFailures" class="form-input" value="3" min="1">
+                                <small class="text-gray-500">Send alert after this many failures</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 12px;">
+                        <label>
+                            <input type="checkbox" id="portEnabled" class="form-checkbox" checked>
+                            Enable monitoring
+                        </label>
                     </div>
                     <button type="submit" class="btn btn-primary">Add Port Monitor</button>
                 </form>
@@ -1171,7 +1194,16 @@
     </div>
 
     <script>
-        // Tab switching
+        // Track which tabs have been loaded
+        const tabsLoaded = {
+            'port-monitor': false,
+            'service-monitor': false,
+            'resource-monitor': false,
+            'adhoc-checks': false,
+            'logs': false
+        };
+
+        // Tab switching with lazy loading
         document.querySelectorAll('.nav-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 const targetTab = tab.getAttribute('data-tab');
@@ -1183,8 +1215,149 @@
                 // Add active class to clicked tab and corresponding content
                 tab.classList.add('active');
                 document.getElementById(targetTab).classList.add('active');
+
+                // Lazy load data for the tab if not already loaded
+                loadTabData(targetTab);
             });
         });
+
+        // Lazy load function for tabs
+        async function loadTabData(tabName, forceRefresh = false) {
+            // Skip if already loaded and not forcing refresh
+            if (tabsLoaded[tabName] && !forceRefresh) {
+                return;
+            }
+
+            switch (tabName) {
+                case 'port-monitor':
+                    // Port monitor loads on page load, but handle refresh
+                    if (forceRefresh) await refreshPortMonitors();
+                    tabsLoaded[tabName] = true;
+                    break;
+
+                case 'service-monitor':
+                    await loadServiceMonitorTab(forceRefresh);
+                    tabsLoaded[tabName] = true;
+                    break;
+
+                case 'resource-monitor':
+                    await loadResourceMonitorTab(forceRefresh);
+                    tabsLoaded[tabName] = true;
+                    break;
+
+                case 'adhoc-checks':
+                    if (!tabsLoaded[tabName] || forceRefresh) {
+                        refreshScheduledChecks();
+                    }
+                    tabsLoaded[tabName] = true;
+                    break;
+
+                case 'logs':
+                    if (!tabsLoaded[tabName] || forceRefresh) {
+                        refreshLogs();
+                    }
+                    tabsLoaded[tabName] = true;
+                    break;
+            }
+        }
+
+        // Load Service Monitor tab with progress indication
+        async function loadServiceMonitorTab(forceRefresh = false) {
+            const container = document.getElementById('serviceTableBody');
+            const statsContainer = document.getElementById('serviceStats');
+
+            // Show loading state
+            if (!tabsLoaded['service-monitor'] || forceRefresh) {
+                if (statsContainer) {
+                    statsContainer.innerHTML = `
+                        <div style="grid-column: 1/-1; text-align: center; padding: 20px;">
+                            <div class="progress-bar" style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; max-width: 300px; margin: 0 auto;">
+                                <div class="progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); animation: progressIndeterminate 2s ease-in-out infinite;"></div>
+                            </div>
+                            <p style="color: #64748b; margin-top: 8px; font-size: 14px;">Loading service monitors...</p>
+                        </div>
+                    `;
+                }
+                if (container) {
+                    container.innerHTML = `
+                        <tr>
+                            <td colspan="6" style="text-align: center; padding: 30px;">
+                                <div class="progress-bar" style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; max-width: 300px; margin: 0 auto;">
+                                    <div class="progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); animation: progressIndeterminate 2s ease-in-out infinite;"></div>
+                                </div>
+                                <p style="color: #64748b; margin-top: 8px;">Fetching monitored services...</p>
+                            </td>
+                        </tr>
+                    `;
+                }
+            }
+
+            try {
+                await refreshServiceMonitors();
+            } catch (error) {
+                console.error('Failed to load service monitors:', error);
+            }
+        }
+
+        // Load Resource Monitor tab with progress indication  
+        async function loadResourceMonitorTab(forceRefresh = false) {
+            const cpuContainer = document.getElementById('liveCpuUsage');
+            const ramContainer = document.getElementById('liveRamUsage');
+            const diskContainer = document.getElementById('liveDiskTableBody');
+            const thresholdsContainer = document.getElementById('thresholdsTableBody');
+
+            // Show loading state
+            if (!tabsLoaded['resource-monitor'] || forceRefresh) {
+                if (cpuContainer) {
+                    cpuContainer.innerHTML = `
+                        <div style="text-align: center;">
+                            <div class="progress-bar" style="height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; width: 80px; margin: 0 auto;">
+                                <div class="progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); animation: progressIndeterminate 2s ease-in-out infinite;"></div>
+                            </div>
+                        </div>
+                    `;
+                }
+                if (ramContainer) {
+                    ramContainer.innerHTML = `
+                        <div style="text-align: center;">
+                            <div class="progress-bar" style="height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; width: 80px; margin: 0 auto;">
+                                <div class="progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); animation: progressIndeterminate 2s ease-in-out infinite;"></div>
+                            </div>
+                        </div>
+                    `;
+                }
+                if (diskContainer) {
+                    diskContainer.innerHTML = `
+                        <tr>
+                            <td colspan="5" style="text-align: center; padding: 20px;">
+                                <div class="progress-bar" style="height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; max-width: 200px; margin: 0 auto;">
+                                    <div class="progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); animation: progressIndeterminate 2s ease-in-out infinite;"></div>
+                                </div>
+                                <p style="color: #64748b; margin-top: 8px; font-size: 12px;">Loading disk info...</p>
+                            </td>
+                        </tr>
+                    `;
+                }
+                if (thresholdsContainer) {
+                    thresholdsContainer.innerHTML = `
+                        <tr>
+                            <td colspan="7" style="text-align: center; padding: 20px;">
+                                <div class="progress-bar" style="height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; max-width: 200px; margin: 0 auto;">
+                                    <div class="progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); animation: progressIndeterminate 2s ease-in-out infinite;"></div>
+                                </div>
+                                <p style="color: #64748b; margin-top: 8px; font-size: 12px;">Loading thresholds...</p>
+                            </td>
+                        </tr>
+                    `;
+                }
+            }
+
+            try {
+                await refreshResourceMonitoring();
+            } catch (error) {
+                console.error('Failed to load resource monitoring:', error);
+            }
+        }
 
         // Modal functions
         function showModal(modalId) {
@@ -1266,20 +1439,43 @@
         document.getElementById('portMonitorForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const port = parseInt(document.getElementById('portNumber').value);
+
             const formData = {
-                port: parseInt(document.getElementById('portNumber').value),
+                port: port,
                 interval: parseInt(document.getElementById('portInterval').value),
                 powershell_script: document.getElementById('portScriptPath').value.trim() || null,
                 powershell_commands: document.getElementById('portScript').value.trim() || null,
                 recovery_script_delay: parseInt(document.getElementById('portRecoveryDelay').value) || 20,
+                powershell_script_failures: parseInt(document.getElementById('portScriptFailures').value) || 3,
                 enabled: document.getElementById('portEnabled').checked
             };
 
             try {
+                // Save port configuration
                 await apiCall('/api/ports/config', {
                     method: 'POST',
                     body: JSON.stringify(formData)
                 });
+
+                // Save email configuration if recipients are provided
+                const emailRecipients = document.getElementById('portEmailRecipients').value.trim();
+                const emailFailures = parseInt(document.getElementById('portEmailFailures').value) || 3;
+
+                if (emailRecipients) {
+                    await apiCall('/api/email/port-config', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            port: port,
+                            config: {
+                                enabled: true,
+                                recipients: emailRecipients,
+                                template: 'default',
+                                email_alert_failures: emailFailures
+                            }
+                        })
+                    });
+                }
 
                 showAlert('success', 'Port monitor added successfully');
                 document.getElementById('portMonitorForm').reset();
@@ -1631,45 +1827,103 @@
 
                 const portConfig = response.config;
 
+                // Get email configuration for this port
+                let emailConfig = { enabled: false, recipients: '', template: 'default', email_alert_failures: 3 };
+                try {
+                    const emailResponse = await apiCall(`/api/email/port-config?port=${port}`);
+                    if (emailResponse.success && emailResponse.config) {
+                        emailConfig = emailResponse.config;
+                    }
+                } catch (e) {
+                    console.log('No email config found for port');
+                }
+
                 // Create edit modal
                 const modalHtml = `
                     <div id="editPortModal" class="modal-overlay" style="display: flex;">
-                        <div class="modal-content" style="max-width: 600px;">
+                        <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
                             <div class="modal-header">
                                 <h3>Edit Port ${port} Configuration</h3>
                                 <button class="modal-close" onclick="closeEditPortModal()">&times;</button>
                             </div>
                             <div class="modal-body">
                                 <form id="editPortForm">
-                                    <div class="form-row">
+                                    <!-- Basic Settings -->
+                                    <h4 style="margin-bottom: 12px; color: #374151;">📊 Basic Settings</h4>
+                                    <div class="grid grid-cols-2 gap-3">
                                         <div class="form-group">
                                             <label class="form-label" for="editPortNumber">Port Number</label>
-                                            <input type="number" id="editPortNumber" class="form-input" value="${port}" readonly>
+                                            <input type="number" id="editPortNumber" class="form-input" value="${port}" readonly style="background: #f1f5f9;">
                                         </div>
                                         <div class="form-group">
                                             <label class="form-label" for="editPortInterval">Check Interval (seconds)</label>
-                                            <input type="number" id="editPortInterval" class="form-input" value="${portConfig.interval}" min="5" max="3600">
+                                            <input type="number" id="editPortInterval" class="form-input" value="${portConfig.interval || 30}" min="5" max="3600">
                                         </div>
                                     </div>
-                                    <div class="form-group">
-                                        <label class="form-label" for="editPortScriptPath">Recovery Script Path (.ps1 file)</label>
-                                        <input type="text" id="editPortScriptPath" class="form-input" value="${portConfig.powershell_script || ''}" placeholder="Optional path to .ps1 script file">
-                                        <small class="text-gray-500">If provided, this script file will be used instead of inline commands</small>
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label" for="editPortScript">Recovery Commands (PowerShell)</label>
-                                        <textarea id="editPortScript" class="form-input" rows="3" placeholder="Optional inline PowerShell commands">${portConfig.powershell_commands || ''}</textarea>
-                                        <small class="text-gray-500">Used only if no script path is provided above</small>
-                                    </div>
-                                    <div class="form-group">
+                                    
+                                    <div class="form-group" style="margin-top: 8px;">
                                         <label>
                                             <input type="checkbox" id="editPortEnabled" class="form-checkbox" ${portConfig.enabled ? 'checked' : ''}>
                                             Enable monitoring
                                         </label>
                                     </div>
+
+                                    <!-- Recovery Settings -->
+                                    <h4 style="margin: 20px 0 12px 0; color: #374151;">🔧 Recovery Settings</h4>
+                                    <div class="form-group">
+                                        <label class="form-label" for="editPortScriptPath">Recovery Script Path (.ps1 file)</label>
+                                        <input type="text" id="editPortScriptPath" class="form-input" value="${portConfig.powershell_script || ''}" placeholder="Optional path to .ps1 script file (e.g., C:\\scripts\\restart.ps1)">
+                                        <small class="text-gray-500">If provided, this script file will be used instead of inline commands</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="editPortScript">Recovery Commands (PowerShell)</label>
+                                        <textarea id="editPortScript" class="form-input" rows="3" placeholder="Optional inline PowerShell commands to run when port goes offline">${portConfig.powershell_commands || ''}</textarea>
+                                        <small class="text-gray-500">Used only if no script path is provided above</small>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div class="form-group">
+                                            <label class="form-label" for="editRecoveryDelay">Recovery Script Delay (seconds)</label>
+                                            <input type="number" id="editRecoveryDelay" class="form-input" value="${portConfig.recovery_script_delay || 20}" min="5" max="3600">
+                                            <small class="text-gray-500">Minimum time between recovery script executions</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="editScriptFailures">Script Trigger After Failures</label>
+                                            <input type="number" id="editScriptFailures" class="form-input" value="${portConfig.powershell_script_failures || 3}" min="1" max="100">
+                                            <small class="text-gray-500">Run recovery after this many consecutive failures</small>
+                                        </div>
+                                    </div>
+
+                                    <!-- Email Alert Settings -->
+                                    <h4 style="margin: 20px 0 12px 0; color: #374151;">📧 Email Alert Settings</h4>
+                                    <div class="form-group">
+                                        <label>
+                                            <input type="checkbox" id="editEmailEnabled" class="form-checkbox" ${emailConfig.enabled ? 'checked' : ''}>
+                                            Enable email alerts for this port
+                                        </label>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="editEmailRecipients">Email Recipients</label>
+                                        <input type="text" id="editEmailRecipients" class="form-input" value="${emailConfig.recipients || ''}" placeholder="email1@example.com, email2@example.com">
+                                        <small class="text-gray-500">Comma-separated list of email addresses</small>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div class="form-group">
+                                            <label class="form-label" for="editEmailTemplate">Email Template</label>
+                                            <select id="editEmailTemplate" class="form-input">
+                                                <option value="default" ${emailConfig.template === 'default' ? 'selected' : ''}>Default</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" for="editEmailFailures">Alert After Failures</label>
+                                            <input type="number" id="editEmailFailures" class="form-input" value="${emailConfig.email_alert_failures || 3}" min="1" max="100">
+                                            <small class="text-gray-500">Send alert after this many failures</small>
+                                        </div>
+                                    </div>
                                 </form>
                             </div>
-                            <div class="modal-footer">
+                            <div class="modal-footer" style="flex-wrap: wrap; gap: 8px;">
+                                <button type="button" class="btn btn-outline" onclick="sendTestAlert(${port})" title="Send a test alert email">📧 Test Alert</button>
+                                <div style="flex: 1;"></div>
                                 <button type="button" class="btn btn-secondary" onclick="closeEditPortModal()">Cancel</button>
                                 <button type="button" class="btn btn-primary" onclick="savePortConfig()">Save Changes</button>
                             </div>
@@ -1705,30 +1959,105 @@
                 const powershell_script = document.getElementById('editPortScriptPath').value.trim() || null;
                 const powershell_commands = document.getElementById('editPortScript').value.trim() || null;
                 const enabled = document.getElementById('editPortEnabled').checked;
+                const recovery_script_delay = parseInt(document.getElementById('editRecoveryDelay').value) || 20;
+                const powershell_script_failures = parseInt(document.getElementById('editScriptFailures').value) || 3;
 
+                // Port config data
                 const formData = {
                     port: port,
                     interval: interval,
                     powershell_script: powershell_script,
                     powershell_commands: powershell_commands,
-                    enabled: enabled
+                    enabled: enabled,
+                    recovery_script_delay: recovery_script_delay,
+                    powershell_script_failures: powershell_script_failures
                 };
 
+                // Save port configuration
                 const response = await apiCall('/api/ports/config', {
                     method: 'PUT',
                     body: JSON.stringify(formData)
                 });
 
-                if (response.success) {
-                    showAlert('success', response.message);
-                    closeEditPortModal();
-                    refreshPortMonitors();
-                } else {
+                if (!response.success) {
                     showAlert('error', response.message || 'Failed to update port configuration');
+                    return;
                 }
+
+                // Save email configuration
+                const emailEnabled = document.getElementById('editEmailEnabled').checked;
+                const emailRecipients = document.getElementById('editEmailRecipients').value.trim();
+                const emailTemplate = document.getElementById('editEmailTemplate').value;
+                const emailFailures = parseInt(document.getElementById('editEmailFailures').value) || 3;
+
+                const emailData = {
+                    port: port,
+                    config: {
+                        enabled: emailEnabled,
+                        recipients: emailRecipients,
+                        template: emailTemplate,
+                        email_alert_failures: emailFailures
+                    }
+                };
+
+                await apiCall('/api/email/port-config', {
+                    method: 'POST',
+                    body: JSON.stringify(emailData)
+                });
+
+                showAlert('success', 'Port configuration saved successfully');
+                closeEditPortModal();
+                refreshPortMonitors();
 
             } catch (error) {
                 showAlert('error', 'Failed to update port configuration');
+            }
+        }
+
+        async function sendTestAlert(port) {
+            // Get email recipients from the form if modal is open, otherwise use configured
+            let recipients = '';
+            const recipientsField = document.getElementById('editEmailRecipients');
+            if (recipientsField) {
+                recipients = recipientsField.value.trim();
+            }
+
+            if (!recipients) {
+                // Try to get from saved config
+                try {
+                    const emailResponse = await apiCall(`/api/email/port-config?port=${port}`);
+                    if (emailResponse.success && emailResponse.config && emailResponse.config.recipients) {
+                        recipients = emailResponse.config.recipients;
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+
+            if (!recipients) {
+                showAlert('error', 'Please enter email recipients first');
+                return;
+            }
+
+            try {
+                showAlert('warning', 'Sending test alert email...');
+
+                const response = await apiCall('/api/email/test-alert', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        type: 'port',
+                        port: port,
+                        recipients: recipients.split(',').map(e => e.trim()).filter(e => e)
+                    })
+                });
+
+                if (response.success) {
+                    showAlert('success', 'Test alert email sent successfully!');
+                } else {
+                    showAlert('error', response.error || 'Failed to send test alert');
+                }
+            } catch (error) {
+                showAlert('error', 'Failed to send test alert: ' + error.message);
             }
         }
 
@@ -2816,20 +3145,16 @@
         // Global refresh function
         async function refreshAllData() {
             try {
-                showAlert('success', 'Refreshing all data...');
+                showAlert('warning', 'Refreshing data...');
 
-                // Refresh all data in parallel
-                await Promise.all([
-                    refreshPortMonitors(),
-                    refreshServiceMonitors(),
-                    refreshResourceMonitoring(),
-                    refreshLogs()
-                ]);
+                // Get active tab and refresh only that tab's data (with force refresh)
+                const activeTab = document.querySelector('.nav-tab.active').getAttribute('data-tab');
+                await loadTabData(activeTab, true);
 
-                showAlert('success', 'All data refreshed successfully');
+                showAlert('success', 'Data refreshed successfully');
             } catch (error) {
-                console.error('Failed to refresh all data:', error);
-                showAlert('error', 'Failed to refresh some data');
+                console.error('Failed to refresh data:', error);
+                showAlert('error', 'Failed to refresh data');
             }
         }
 
@@ -2899,15 +3224,15 @@
 
         // Initialize the application
         document.addEventListener('DOMContentLoaded', () => {
+            // Only load port monitors initially (default tab)
+            // Other tabs load lazily when clicked
             refreshPortMonitors();
-            refreshServiceMonitors();
-            refreshResourceMonitoring();
-            refreshLogs();
+            tabsLoaded['port-monitor'] = true;
 
             // Connect to WebSocket for real-time updates
             connectWebSocket();
 
-            // Auto-refresh every 30 seconds (fallback if WebSocket fails)
+            // Auto-refresh every 30 seconds for the active tab only
             setInterval(() => {
                 const activeTab = document.querySelector('.nav-tab.active').getAttribute('data-tab');
                 switch (activeTab) {
@@ -2918,13 +3243,27 @@
                         }
                         break;
                     case 'service-monitor':
-                        refreshServiceMonitors();
+                        // Only refresh if tab was already loaded
+                        if (tabsLoaded['service-monitor']) {
+                            refreshServiceMonitors();
+                        }
                         break;
                     case 'resource-monitor':
-                        refreshResourceMonitoring();
+                        // Only refresh if tab was already loaded
+                        if (tabsLoaded['resource-monitor']) {
+                            refreshResourceMonitoring();
+                        }
+                        break;
+                    case 'adhoc-checks':
+                        // Refresh scheduled checks
+                        if (tabsLoaded['adhoc-checks']) {
+                            refreshScheduledChecks();
+                        }
                         break;
                     case 'logs':
-                        refreshLogs();
+                        if (tabsLoaded['logs']) {
+                            refreshLogs();
+                        }
                         break;
                 }
             }, 30000);

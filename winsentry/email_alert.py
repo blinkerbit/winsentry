@@ -126,24 +126,41 @@ WinSentry Alert System"""
     def update_smtp_config(self, config: Dict) -> bool:
         """Update SMTP configuration"""
         try:
-            # Validate required fields
-            required_fields = ["smtp_server", "smtp_port", "smtp_username", "smtp_password", "from_email"]
+            # Validate required fields (only server, port, and from_email are required)
+            required_fields = ["smtp_server", "smtp_port", "from_email"]
             for field in required_fields:
                 if not config.get(field):
                     raise ValueError(f"Missing required field: {field}")
             
             # Validate port number
-            if not isinstance(config["smtp_port"], int) or config["smtp_port"] <= 0:
+            port = config.get("smtp_port")
+            if isinstance(port, str):
+                port = int(port)
+                config["smtp_port"] = port
+            if not isinstance(port, int) or port <= 0:
                 raise ValueError("SMTP port must be a positive integer")
             
+            # Ensure optional fields have default values
+            config.setdefault("smtp_username", "")
+            config.setdefault("smtp_password", "")
+            config.setdefault("use_tls", True)
+            config.setdefault("from_name", "WinSentry Alert System")
+            
             return self._save_smtp_config(config)
+        except ValueError as e:
+            self.logger.error(f"Invalid SMTP config: {e}")
+            return False
         except Exception as e:
             self.logger.error(f"Failed to update SMTP config: {e}")
             return False
     
     def get_smtp_config(self) -> Dict:
         """Get current SMTP configuration"""
-        return self.smtp_config.copy()
+        # Return config without password for security
+        config = self.smtp_config.copy()
+        if "smtp_password" in config:
+            config["smtp_password"] = "***" if config["smtp_password"] else ""
+        return config
     
     def add_email_template(self, template_name: str, subject: str, body: str) -> bool:
         """Add or update email template"""
@@ -181,17 +198,33 @@ WinSentry Alert System"""
             if not self.smtp_config.get("smtp_server"):
                 return {"success": False, "error": "SMTP server not configured"}
             
-            # Create SMTP connection
-            server = smtplib.SMTP(self.smtp_config["smtp_server"], self.smtp_config["smtp_port"])
+            if not self.smtp_config.get("from_email"):
+                return {"success": False, "error": "From email not configured"}
             
+            # Create SMTP connection
+            server = smtplib.SMTP(
+                self.smtp_config["smtp_server"], 
+                self.smtp_config.get("smtp_port", 587),
+                timeout=30
+            )
+            
+            # Enable TLS if configured
             if self.smtp_config.get("use_tls", True):
                 server.starttls()
             
-            # Login
-            server.login(self.smtp_config["smtp_username"], self.smtp_config["smtp_password"])
+            # Only login if credentials are provided
+            username = self.smtp_config.get("smtp_username", "")
+            password = self.smtp_config.get("smtp_password", "")
+            if username and password:
+                server.login(username, password)
+            
             server.quit()
             
             return {"success": True, "message": "SMTP connection successful"}
+        except smtplib.SMTPAuthenticationError as e:
+            return {"success": False, "error": f"Authentication failed: {str(e)}"}
+        except smtplib.SMTPConnectError as e:
+            return {"success": False, "error": f"Connection failed: {str(e)}"}
         except Exception as e:
             return {"success": False, "error": str(e)}
     
@@ -238,12 +271,20 @@ WinSentry Alert System"""
         def _send():
             try:
                 # Send email
-                server = smtplib.SMTP(self.smtp_config["smtp_server"], self.smtp_config["smtp_port"])
+                server = smtplib.SMTP(
+                    self.smtp_config["smtp_server"], 
+                    self.smtp_config.get("smtp_port", 587),
+                    timeout=30
+                )
                 
                 if self.smtp_config.get("use_tls", True):
                     server.starttls()
                 
-                server.login(self.smtp_config["smtp_username"], self.smtp_config["smtp_password"])
+                # Only login if credentials are provided
+                username = self.smtp_config.get("smtp_username", "")
+                password = self.smtp_config.get("smtp_password", "")
+                if username and password:
+                    server.login(username, password)
                 
                 text = msg.as_string()
                 server.sendmail(self.smtp_config["from_email"], recipients, text)
@@ -372,12 +413,20 @@ WinSentry Alert System"""
         def _send():
             try:
                 # Send email
-                server = smtplib.SMTP(self.smtp_config["smtp_server"], self.smtp_config["smtp_port"])
+                server = smtplib.SMTP(
+                    self.smtp_config["smtp_server"], 
+                    self.smtp_config.get("smtp_port", 587),
+                    timeout=30
+                )
                 
                 if self.smtp_config.get("use_tls", True):
                     server.starttls()
                 
-                server.login(self.smtp_config["smtp_username"], self.smtp_config["smtp_password"])
+                # Only login if credentials are provided
+                username = self.smtp_config.get("smtp_username", "")
+                password = self.smtp_config.get("smtp_password", "")
+                if username and password:
+                    server.login(username, password)
                 
                 text = msg.as_string()
                 server.sendmail(self.smtp_config["from_email"], recipients, text)

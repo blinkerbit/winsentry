@@ -20,7 +20,6 @@ try:
                DatabaseStatsHandler,
                EmailConfigHandler,
                EmailTemplateHandler,
-               PortEmailConfigHandler,
                EmailTestHandler,
                PowerShellExecuteHandler,
                ServiceConfigHandler,
@@ -51,7 +50,9 @@ try:
                AdhocCheckScheduledActionHandler,
                AdhocCheckScheduledRunHandler,
                PortCheckNowHandler,
-               ServiceCheckNowHandler
+               ServiceCheckNowHandler,
+               EmailTestAlertHandler,
+               SinglePortEmailConfigHandler
            )
 except ImportError:
     # Fall back to relative imports (when running directly)
@@ -67,7 +68,6 @@ except ImportError:
         DatabaseStatsHandler,
         EmailConfigHandler,
         EmailTemplateHandler,
-        PortEmailConfigHandler,
         EmailTestHandler,
         PowerShellExecuteHandler,
         ServiceConfigHandler,
@@ -98,7 +98,9 @@ except ImportError:
         AdhocCheckScheduledActionHandler,
         AdhocCheckScheduledRunHandler,
         PortCheckNowHandler,
-        ServiceCheckNowHandler
+        ServiceCheckNowHandler,
+        EmailTestAlertHandler,
+        SinglePortEmailConfigHandler
     )
 
 
@@ -129,8 +131,9 @@ class WinSentryApplication(web.Application):
             (r"/api/database/stats", DatabaseStatsHandler, dict(port_monitor=port_monitor)),
             (r"/api/email/config", EmailConfigHandler, dict(port_monitor=port_monitor)),
             (r"/api/email/templates", EmailTemplateHandler, dict(port_monitor=port_monitor)),
-            (r"/api/email/port-config", PortEmailConfigHandler, dict(port_monitor=port_monitor)),
+            (r"/api/email/port-config", SinglePortEmailConfigHandler, dict(port_monitor=port_monitor)),
             (r"/api/email/test", EmailTestHandler, dict(port_monitor=port_monitor)),
+            (r"/api/email/test-alert", EmailTestAlertHandler, dict(port_monitor=port_monitor)),
             (r"/api/powershell/execute", PowerShellExecuteHandler, dict(port_monitor=port_monitor)),
             (r"/api/service-config", ServiceConfigHandler, dict(service_manager=service_manager)),
             (r"/api/service-monitor", ServiceMonitorHandler, dict(service_monitor=service_monitor)),
