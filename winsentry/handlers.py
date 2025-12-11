@@ -4,30 +4,118 @@ Tornado request handlers for WinSentry API
 
 import json
 import logging
+import uuid
+from datetime import datetime
+from functools import wraps
 
-from tornado.web import RequestHandler
+from tornado.web import RequestHandler, HTTPError
 from tornado import websocket
 
 
 logger = logging.getLogger(__name__)
 
 
+def validate_json_body(required_fields=None):
+    """Decorator to validate JSON request body"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            try:
+                if self.request.body:
+                    data = json.loads(self.request.body)
+                    if required_fields:
+                        missing = [f for f in required_fields if f not in data]
+                        if missing:
+                            self.write_json({
+                                'success': False,
+                                'error': f'Missing required fields: {", ".join(missing)}'
+                            }, 400)
+                            return
+                    self._json_data = data
+                else:
+                    self._json_data = {}
+            except json.JSONDecodeError as e:
+                self.write_json({
+                    'success': False,
+                    'error': f'Invalid JSON: {str(e)}'
+                }, 400)
+                return
+            return await func(self, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
 class BaseHandler(RequestHandler):
-    """Base handler with common functionality"""
+    """Base handler with common functionality and production-ready features"""
+    
+    def prepare(self):
+        """Prepare the request - add request ID for tracking"""
+        self._request_id = str(uuid.uuid4())[:8]
+        self._start_time = datetime.now()
+    
+    def on_finish(self):
+        """Log request completion with timing"""
+        if hasattr(self, '_start_time'):
+            duration = (datetime.now() - self._start_time).total_seconds() * 1000
+            if duration > 1000:  # Log slow requests (>1s)
+                logger.warning(
+                    f"[{self._request_id}] Slow request: {self.request.method} {self.request.uri} "
+                    f"completed in {duration:.2f}ms"
+                )
     
     def set_default_headers(self):
+        """Set security and CORS headers"""
+        # CORS headers
         self.set_header("Access-Control-Allow-Origin", "*")
-        self.set_header("Access-Control-Allow-Headers", "Content-Type")
+        self.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        
+        # Security headers
+        self.set_header("X-Content-Type-Options", "nosniff")
+        self.set_header("X-Frame-Options", "DENY")
+        self.set_header("X-XSS-Protection", "1; mode=block")
+        self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
     
-    def options(self):
+    def options(self, *args, **kwargs):
+        """Handle CORS preflight requests"""
         self.set_status(204)
         self.finish()
     
     def write_json(self, data, status=200):
+        """Write JSON response with proper headers"""
         self.set_status(status)
-        self.set_header("Content-Type", "application/json")
-        self.write(json.dumps(data, default=str))
+        self.set_header("Content-Type", "application/json; charset=utf-8")
+        self.write(json.dumps(data, default=str, ensure_ascii=False))
+    
+    def write_error(self, status_code, **kwargs):
+        """Custom error handler for better error responses"""
+        error_message = "An unexpected error occurred"
+        
+        if "exc_info" in kwargs:
+            exc = kwargs["exc_info"][1]
+            if isinstance(exc, HTTPError):
+                error_message = exc.log_message or str(exc)
+            else:
+                error_message = str(exc)
+                logger.error(f"[{getattr(self, '_request_id', 'unknown')}] Error: {error_message}", 
+                           exc_info=kwargs["exc_info"])
+        
+        self.write_json({
+            'success': False,
+            'error': error_message,
+            'status_code': status_code
+        }, status_code)
+    
+    def get_json_body(self):
+        """Safely parse JSON body"""
+        if hasattr(self, '_json_data'):
+            return self._json_data
+        try:
+            if self.request.body:
+                return json.loads(self.request.body)
+            return {}
+        except json.JSONDecodeError:
+            return {}
 
 
 class MainHandler(BaseHandler):
@@ -1745,15 +1833,15 @@ class EmailConfigHandler(BaseHandler):
             data = json.loads(self.request.body)
             
             # Save SMTP configuration
-            success = self.port_monitor.email_alert.save_smtp_config(
-                smtp_server=data.get('smtp_server'),
-                smtp_port=data.get('smtp_port'),
-                smtp_username=data.get('smtp_username'),
-                smtp_password=data.get('smtp_password'),
-                from_email=data.get('from_email'),
-                from_name=data.get('from_name'),
-                use_tls=data.get('use_tls', True)
-            )
+            success = self.port_monitor.email_alert.update_smtp_config({
+                'smtp_server': data.get('smtp_server'),
+                'smtp_port': data.get('smtp_port'),
+                'smtp_username': data.get('smtp_username'),
+                'smtp_password': data.get('smtp_password'),
+                'from_email': data.get('from_email'),
+                'from_name': data.get('from_name'),
+                'use_tls': data.get('use_tls', True)
+            })
             
             if success:
                 message = "Email configuration saved successfully"
@@ -1782,7 +1870,7 @@ class EmailTemplateHandler(BaseHandler):
     async def get(self):
         """Get all email templates"""
         try:
-            templates = self.port_monitor.email_alert.get_templates()
+            templates = self.port_monitor.email_alert.get_email_templates()
             
             self.write_json({
                 'success': True,
@@ -1801,8 +1889,8 @@ class EmailTemplateHandler(BaseHandler):
         try:
             data = json.loads(self.request.body)
             
-            success = self.port_monitor.email_alert.save_template(
-                template_name=data.get('template_name'),
+            success = self.port_monitor.email_alert.add_email_template(
+                template_name=data.get('name') or data.get('template_name'),
                 subject=data.get('subject'),
                 body=data.get('body')
             )
@@ -1830,7 +1918,7 @@ class EmailTemplateHandler(BaseHandler):
             data = json.loads(self.request.body)
             template_name = data.get('template_name')
             
-            success = self.port_monitor.email_alert.delete_template(template_name)
+            success = self.port_monitor.email_alert.delete_email_template(template_name)
             
             if success:
                 message = f"Template '{template_name}' deleted successfully"
@@ -1859,7 +1947,7 @@ class PortEmailConfigHandler(BaseHandler):
     async def get(self):
         """Get all port email configurations"""
         try:
-            configs = self.port_monitor.email_alert.get_all_port_configs()
+            configs = self.port_monitor.email_alert.get_all_port_email_configs()
             
             self.write_json({
                 'success': True,
@@ -1880,7 +1968,7 @@ class PortEmailConfigHandler(BaseHandler):
             port = data.get('port')
             config = data.get('config')
             
-            success = self.port_monitor.email_alert.save_port_config(port, config)
+            success = self.port_monitor.email_alert.save_port_email_config(port, config)
             
             if success:
                 message = f"Email configuration for port {port} saved successfully"
@@ -1934,36 +2022,57 @@ class EmailTestHandler(BaseHandler):
     async def post(self):
         """Test email configuration or send test email"""
         try:
-            data = json.loads(self.request.body)
-            test_type = data.get('type')
+            # Parse body if present, otherwise default to connection test
+            try:
+                data = json.loads(self.request.body) if self.request.body else {}
+            except json.JSONDecodeError:
+                data = {}
+            
+            test_type = data.get('type', 'connection')  # Default to connection test
             
             if test_type == 'connection':
-                # Test SMTP connection
-                success = await self.port_monitor.email_alert.test_connection()
-                if success:
-                    message = "SMTP connection test successful"
-                else:
-                    message = "SMTP connection test failed"
+                # Test SMTP connection - this is synchronous
+                result = self.port_monitor.email_alert.test_smtp_connection()
+                self.write_json(result)
+                return
                     
             elif test_type == 'email':
                 # Send test email
                 recipients = data.get('recipients', [])
-                success = await self.port_monitor.email_alert.send_test_email(recipients)
+                if not recipients:
+                    self.write_json({
+                        'success': False,
+                        'error': 'No recipients specified'
+                    }, 400)
+                    return
+                    
+                # Send a test email using the alert email function
+                success = await self.port_monitor.email_alert.send_alert_email(
+                    port=0,
+                    recipients=recipients,
+                    template_name='default',
+                    custom_data={
+                        'status': 'TEST',
+                        'message': 'This is a test email from WinSentry',
+                        'server_name': 'WinSentry Test',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                )
+                
                 if success:
                     message = f"Test email sent successfully to {', '.join(recipients)}"
                 else:
                     message = "Failed to send test email"
+                    
+                self.write_json({
+                    'success': success,
+                    'message': message
+                })
             else:
                 self.write_json({
                     'success': False,
                     'error': 'Invalid test type'
                 }, 400)
-                return
-            
-            self.write_json({
-                'success': success,
-                'message': message
-            })
             
         except Exception as e:
             logger.error(f"Failed to test email: {e}")

@@ -490,21 +490,23 @@ class AdhocCheckManager:
             if not recipient_list:
                 return
             
-            subject = f"WinSentry Alert: {check_type.title()} Check Failed - {target_name}"
-            body = f"""
-Adhoc Check Alert
-
-Type: {check_type.title()}
-Target: {target_name}
-Expected State: {expected_state}
-Current State: {current_state}
-
-Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-This is an automated alert from WinSentry.
-"""
-            
-            await self.email_alert.send_email(recipient_list, subject, body)
+            # Use the proper send_alert_email method with custom data
+            await self.email_alert.send_alert_email(
+                port=0,  # Use 0 for non-port alerts
+                recipients=recipient_list,
+                template_name='default',
+                custom_data={
+                    'status': 'FAILED',
+                    'severity': 'HIGH',
+                    'message': f"Adhoc {check_type.title()} check failed for {target_name}. Expected: {expected_state}, Current: {current_state}",
+                    'check_type': check_type,
+                    'target_name': target_name,
+                    'expected_state': expected_state,
+                    'current_state': current_state,
+                    'server_name': 'WinSentry',
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
             self.logger.info(f"Alert email sent to {recipients}")
         except Exception as e:
             self.logger.error(f"Failed to send alert email: {e}")

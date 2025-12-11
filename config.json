@@ -1,0 +1,31 @@
+{
+    "server": {
+        "port": 8888,
+        "debug": false,
+        "log_level": "INFO"
+    },
+    "database": {
+        "path": "winsentry.db",
+        "backup_enabled": true,
+        "backup_interval_hours": 24,
+        "cleanup_logs_days": 30
+    },
+    "monitoring": {
+        "default_check_interval_seconds": 30,
+        "max_failure_count_alert": 3,
+        "service_timeout_seconds": 60
+    },
+    "email": {
+        "enabled": false,
+        "smtp_server": "",
+        "smtp_port": 587,
+        "use_tls": true,
+        "from_email": "",
+        "from_name": "WinSentry Alert System"
+    },
+    "security": {
+        "enable_cors": true,
+        "allowed_origins": ["*"],
+        "rate_limit_requests_per_minute": 100
+    }
+}

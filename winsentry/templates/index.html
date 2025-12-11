@@ -1733,26 +1733,31 @@
         }
 
         async function viewAllServices() {
-            try {
-                // Get all services from the API
-                const response = await apiCall('/api/services');
+            // Remove existing modal if any
+            const existingModal = document.getElementById('allServicesModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
 
-                if (!response.success) {
-                    showAlert('error', 'Failed to load services');
-                    return;
-                }
-
-                const services = response.services || [];
-
-                // Create services modal
-                const modalHtml = `
-                    <div id="allServicesModal" class="modal-overlay" style="display: flex;">
-                        <div class="modal-content" style="max-width: 1200px; max-height: 80vh;">
-                            <div class="modal-header">
-                                <h3>All Windows Services (${services.length} total)</h3>
-                                <button class="modal-close" onclick="closeAllServicesModal()">&times;</button>
+            // Show loading modal with progress bar immediately
+            const loadingModalHtml = `
+                <div id="allServicesModal" class="modal-overlay" style="display: flex;">
+                    <div class="modal-content" style="max-width: 1200px; max-height: 80vh;">
+                        <div class="modal-header">
+                            <h3>Loading Windows Services...</h3>
+                            <button class="modal-close" onclick="closeAllServicesModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="servicesLoadingContainer" style="text-align: center; padding: 40px;">
+                                <p style="color: #64748b; margin-bottom: 16px; font-size: 16px;">Fetching all Windows services...</p>
+                                <div style="max-width: 400px; margin: 0 auto;">
+                                    <div class="progress-bar" style="height: 12px; background: #e2e8f0; border-radius: 6px; overflow: hidden;">
+                                        <div id="servicesProgressBar" class="progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); animation: progressIndeterminate 2s ease-in-out infinite;"></div>
+                                    </div>
+                                    <p id="servicesLoadingStatus" style="color: #94a3b8; font-size: 12px; margin-top: 8px;">Please wait, this may take a moment...</p>
+                                </div>
                             </div>
-                            <div class="modal-body">
+                            <div id="servicesContentContainer" style="display: none;">
                                 <div class="mb-3">
                                     <input type="text" id="serviceSearch" class="form-input" placeholder="Search services..." onkeyup="filterServices()">
                                 </div>
@@ -1770,55 +1775,113 @@
                                             </tr>
                                         </thead>
                                         <tbody id="servicesTableBody">
-                                            ${services.map(service => `
-                                                <tr class="service-row" data-name="${service.name}">
-                                                    <td><strong>${service.name}</strong></td>
-                                                    <td>${service.display_name || 'N/A'}</td>
-                                                    <td>
-                                                        <span class="status-badge ${service.state === 'Running' ? 'status-online' : 'status-offline'}">
-                                                            ${service.state || 'Unknown'}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <span class="status-badge ${service.status === 'OK' ? 'status-online' : 'status-offline'}">
-                                                            ${service.status || 'Unknown'}
-                                                        </span>
-                                                    </td>
-                                                    <td>${service.start_mode || 'N/A'}</td>
-                                                    <td>${service.process_id || 'N/A'}</td>
-                                                    <td>
-                                                        <div class="flex gap-1">
-                                                            ${service.state === 'Running' ?
-                        `<button class="btn btn-xs btn-warning" onclick="performServiceAction('${service.name}', 'stop')" title="Stop service">Stop</button>` :
-                        `<button class="btn btn-xs btn-success" onclick="performServiceAction('${service.name}', 'start')" title="Start service">Start</button>`
-                    }
-                                                            <button class="btn btn-xs btn-info" onclick="performServiceAction('${service.name}', 'restart')" title="Restart service">Restart</button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            `).join('')}
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" onclick="closeAllServicesModal()">Close</button>
-                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" onclick="closeAllServicesModal()">Close</button>
                         </div>
                     </div>
-                `;
+                </div>
+            `;
 
-                // Remove existing modal if any
-                const existingModal = document.getElementById('allServicesModal');
-                if (existingModal) {
-                    existingModal.remove();
+            // Add modal to page
+            document.body.insertAdjacentHTML('beforeend', loadingModalHtml);
+
+            // Add indeterminate progress animation style
+            if (!document.getElementById('progressAnimationStyle')) {
+                const styleEl = document.createElement('style');
+                styleEl.id = 'progressAnimationStyle';
+                styleEl.textContent = `
+                    @keyframes progressIndeterminate {
+                        0% { width: 0%; margin-left: 0%; }
+                        50% { width: 70%; margin-left: 15%; }
+                        100% { width: 0%; margin-left: 100%; }
+                    }
+                `;
+                document.head.appendChild(styleEl);
+            }
+
+            try {
+                // Simulate progress updates
+                const statusEl = document.getElementById('servicesLoadingStatus');
+                const progressBarEl = document.getElementById('servicesProgressBar');
+
+                if (statusEl) statusEl.textContent = 'Connecting to service manager...';
+
+                // Get all services from the API
+                const response = await apiCall('/api/services');
+
+                if (!response.success) {
+                    showAlert('error', 'Failed to load services');
+                    closeAllServicesModal();
+                    return;
                 }
 
-                // Add modal to page
-                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                const services = response.services || [];
+
+                // Update progress to show completion
+                if (progressBarEl) {
+                    progressBarEl.style.animation = 'none';
+                    progressBarEl.style.width = '100%';
+                    progressBarEl.style.marginLeft = '0';
+                }
+                if (statusEl) statusEl.textContent = `Found ${services.length} services. Rendering...`;
+
+                // Small delay to show 100% progress
+                await new Promise(resolve => setTimeout(resolve, 200));
+
+                // Populate the services table
+                const tableBody = document.getElementById('servicesTableBody');
+                const loadingContainer = document.getElementById('servicesLoadingContainer');
+                const contentContainer = document.getElementById('servicesContentContainer');
+
+                if (tableBody) {
+                    tableBody.innerHTML = services.map(service => `
+                        <tr class="service-row" data-name="${service.name}">
+                            <td><strong>${service.name}</strong></td>
+                            <td>${service.display_name || 'N/A'}</td>
+                            <td>
+                                <span class="status-badge ${service.state === 'Running' ? 'status-online' : 'status-offline'}">
+                                    ${service.state || 'Unknown'}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="status-badge ${service.status === 'OK' ? 'status-online' : 'status-offline'}">
+                                    ${service.status || 'Unknown'}
+                                </span>
+                            </td>
+                            <td>${service.start_mode || 'N/A'}</td>
+                            <td>${service.process_id || 'N/A'}</td>
+                            <td>
+                                <div class="flex gap-1">
+                                    ${service.state === 'Running' ?
+                            `<button class="btn btn-xs btn-warning" onclick="performServiceAction('${service.name}', 'stop')" title="Stop service">Stop</button>` :
+                            `<button class="btn btn-xs btn-success" onclick="performServiceAction('${service.name}', 'start')" title="Start service">Start</button>`
+                        }
+                                    <button class="btn btn-xs btn-info" onclick="performServiceAction('${service.name}', 'restart')" title="Restart service">Restart</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+
+                // Update modal header with service count
+                const modalHeader = document.querySelector('#allServicesModal .modal-header h3');
+                if (modalHeader) {
+                    modalHeader.textContent = `All Windows Services (${services.length} total)`;
+                }
+
+                // Show content, hide loading
+                if (loadingContainer) loadingContainer.style.display = 'none';
+                if (contentContainer) contentContainer.style.display = 'block';
 
             } catch (error) {
+                console.error('Failed to load services:', error);
                 showAlert('error', 'Failed to load services');
+                closeAllServicesModal();
             }
         }
 

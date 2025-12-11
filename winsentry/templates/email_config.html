@@ -1,755 +1,990 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Email Configuration - WinSentry</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        .nav-link.active { background-color: #007bff !important; color: white !important; }
-        .card-header { background-color: #f8f9fa; }
-        .template-preview { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 1rem; }
-        .btn-group-sm .btn { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
-        .status-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
-        .status-indicator.online { background-color: #28a745; }
-        .status-indicator.offline { background-color: #dc3545; }
+        /* CSS Reset and Base Styles */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8fafc;
+            min-height: 100vh;
+            color: #334155;
+            line-height: 1.6;
+        }
+
+        /* Container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header - matching dashboard */
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #1e293b;
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: #64748b;
+            font-size: 16px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Tabs - matching dashboard nav-tabs */
+        .nav-tabs {
+            display: flex;
+            background: white;
+            border-radius: 12px;
+            padding: 4px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            overflow-x: auto;
+        }
+
+        .nav-tab {
+            flex: 1;
+            padding: 12px 20px;
+            text-align: center;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            color: #64748b;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .nav-tab.active {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .nav-tab:hover:not(.active) {
+            background: #f1f5f9;
+            color: #334155;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Card - matching dashboard */
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .card-header {
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 16px;
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        /* Form Elements - matching dashboard */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 6px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .form-select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .form-checkbox {
+            margin-right: 8px;
+        }
+
+        .form-text {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        textarea.form-input {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        /* Buttons - matching dashboard */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #3b82f6;
+            color: #3b82f6;
+        }
+
+        .btn-outline:hover {
+            background: #eff6ff;
+        }
+
+        /* Table - matching dashboard */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        .table th,
+        .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .table tbody tr:hover {
+            background: #f8fafc;
+        }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge-secondary {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        /* Alert - matching dashboard */
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .alert-success {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .alert-warning {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+
+        /* Grid */
+        .grid {
+            display: grid;
+        }
+
+        .grid-cols-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .gap-3 {
+            gap: 12px;
+        }
+
+        .gap-4 {
+            gap: 16px;
+        }
+
+        /* Flex utilities */
+        .flex {
+            display: flex;
+        }
+
+        .justify-between {
+            justify-content: space-between;
+        }
+
+        .items-center {
+            align-items: center;
+        }
+
+        .gap-2 {
+            gap: 8px;
+        }
+
+        /* Margin utilities */
+        .mb-3 {
+            margin-bottom: 24px;
+        }
+
+        .mt-3 {
+            margin-top: 24px;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            color: #1e293b;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #64748b;
+            cursor: pointer;
+        }
+
+        .modal-close:hover {
+            color: #334155;
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .modal-footer {
+            padding: 20px 24px;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        /* Template preview */
+        .template-preview {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            min-height: 150px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        /* Loading spinner */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 50%;
+            border-top-color: #3b82f6;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 12px;
+            }
+
+            .nav-tabs {
+                flex-direction: column;
+            }
+
+            .grid-cols-2 {
+                grid-template-columns: 1fr;
+            }
+
+            .header-content {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 16px;
+            }
+        }
     </style>
 </head>
+
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="/">
-                <i class="fas fa-shield-alt"></i> WinSentry
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="/">
-                    <i class="fas fa-arrow-left"></i> Back to Dashboard
-                </a>
+    <div class="container">
+        <!-- Header matching dashboard -->
+        <div class="header">
+            <div class="header-content">
+                <div>
+                    <h1>📧 Email Configuration</h1>
+                    <p>Configure SMTP settings, templates, and email alerts for WinSentry</p>
+                </div>
+                <div class="header-actions">
+                    <a href="/" class="btn btn-secondary">← Back to Dashboard</a>
+                </div>
             </div>
         </div>
-    </nav>
 
-    <div class="container mt-4">
-        <!-- Tabs -->
-        <ul class="nav nav-tabs" id="emailTabs" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="smtp-tab" data-bs-toggle="tab" data-bs-target="#smtp" type="button" role="tab">
-                    <i class="fas fa-server"></i> SMTP Configuration
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="templates-tab" data-bs-toggle="tab" data-bs-target="#templates" type="button" role="tab">
-                    <i class="fas fa-envelope"></i> Email Templates
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="port-config-tab" data-bs-toggle="tab" data-bs-target="#port-config" type="button" role="tab">
-                    <i class="fas fa-cog"></i> Port Email Settings
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="test-tab" data-bs-toggle="tab" data-bs-target="#test" type="button" role="tab">
-                    <i class="fas fa-vial"></i> Test Email
-                </button>
-            </li>
-        </ul>
+        <div id="alertContainer"></div>
 
-        <div class="tab-content" id="emailTabsContent">
-            <!-- SMTP Configuration Tab -->
-            <div class="tab-pane fade show active" id="smtp" role="tabpanel">
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5 class="mb-0"><i class="fas fa-server"></i> SMTP Server Configuration</h5>
-                            </div>
-                            <div class="card-body">
-                                <form id="smtpConfigForm">
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="smtpServer" class="form-label">SMTP Server</label>
-                                                <input type="text" class="form-control" id="smtpServer" placeholder="smtp.gmail.com" required>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="smtpPort" class="form-label">SMTP Port</label>
-                                                <input type="number" class="form-control" id="smtpPort" value="587" min="1" max="65535" required>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="smtpUsername" class="form-label">Username</label>
-                                                <input type="text" class="form-control" id="smtpUsername" placeholder="your-email@gmail.com" required>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="smtpPassword" class="form-label">Password</label>
-                                                <input type="password" class="form-control" id="smtpPassword" placeholder="App Password" required>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="fromEmail" class="form-label">From Email</label>
-                                                <input type="email" class="form-control" id="fromEmail" placeholder="alerts@yourcompany.com" required>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="fromName" class="form-label">From Name</label>
-                                                <input type="text" class="form-control" id="fromName" value="WinSentry Alert System" required>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="mb-3">
-                                        <div class="form-check">
-                                            <input class="form-check-input" type="checkbox" id="useTls" checked>
-                                            <label class="form-check-label" for="useTls">
-                                                Use TLS/SSL
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <div class="d-flex gap-2">
-                                        <button type="submit" class="btn btn-primary">
-                                            <i class="fas fa-save"></i> Save Configuration
-                                        </button>
-                                        <button type="button" class="btn btn-outline-primary" onclick="testSmtpConnection()">
-                                            <i class="fas fa-vial"></i> Test Connection
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
+        <!-- Tabs Navigation -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-tab="smtp">📮 SMTP Configuration</button>
+            <button class="nav-tab" data-tab="templates">📝 Email Templates</button>
+            <button class="nav-tab" data-tab="port-alerts">🔌 Port Alerts</button>
+            <button class="nav-tab" data-tab="service-alerts">⚙️ Service Alerts</button>
+        </div>
+
+        <!-- SMTP Configuration Tab -->
+        <div id="smtp" class="tab-content active">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">SMTP Server Settings</h2>
+                </div>
+                <form id="smtpForm">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="form-group">
+                            <label class="form-label" for="smtpServer">SMTP Server</label>
+                            <input type="text" id="smtpServer" class="form-input" placeholder="smtp.example.com">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="smtpPort">SMTP Port</label>
+                            <input type="number" id="smtpPort" class="form-input" value="587" placeholder="587">
                         </div>
                     </div>
-                </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="form-group">
+                            <label class="form-label" for="smtpUsername">Username</label>
+                            <input type="text" id="smtpUsername" class="form-input"
+                                placeholder="your-email@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="smtpPassword">Password</label>
+                            <input type="password" id="smtpPassword" class="form-input" placeholder="••••••••">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="smtpFromEmail">From Email</label>
+                        <input type="email" id="smtpFromEmail" class="form-input" placeholder="alerts@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="smtpUseTLS" class="form-checkbox" checked>
+                            Use TLS/SSL Encryption
+                        </label>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="submit" class="btn btn-primary">💾 Save SMTP Settings</button>
+                        <button type="button" class="btn btn-outline" onclick="testSmtp()">📧 Test Connection</button>
+                    </div>
+                </form>
             </div>
+        </div>
 
-            <!-- Email Templates Tab -->
-            <div class="tab-pane fade" id="templates" role="tabpanel">
-                <div class="row mt-3">
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0"><i class="fas fa-envelope"></i> Email Templates</h5>
-                                <button class="btn btn-sm btn-primary" onclick="showAddTemplateModal()">
-                                    <i class="fas fa-plus"></i> Add Template
-                                </button>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-striped">
-                                        <thead>
-                                            <tr>
-                                                <th>Template Name</th>
-                                                <th>Subject</th>
-                                                <th>Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="templatesTable">
-                                            <tr>
-                                                <td colspan="3" class="text-center">
-                                                    <i class="fas fa-spinner fa-spin"></i> Loading templates...
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5 class="mb-0"><i class="fas fa-eye"></i> Template Preview</h5>
-                            </div>
-                            <div class="card-body">
-                                <div id="templatePreview" class="template-preview">
-                                    <p class="text-muted">Select a template to preview</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+        <!-- Email Templates Tab -->
+        <div id="templates" class="tab-content">
+            <div class="card">
+                <div class="card-header flex justify-between items-center">
+                    <h2 class="card-title">Email Templates</h2>
+                    <button class="btn btn-primary btn-sm" onclick="showTemplateModal()">+ Add Template</button>
                 </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Template Name</th>
+                            <th>Type</th>
+                            <th>Subject</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="templatesTableBody">
+                        <!-- Templates will be loaded here -->
+                    </tbody>
+                </table>
             </div>
+        </div>
 
-            <!-- Port Email Configuration Tab -->
-            <div class="tab-pane fade" id="port-config" role="tabpanel">
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0"><i class="fas fa-cog"></i> Port Email Configuration</h5>
-                                <div class="btn-group">
-                                    <button class="btn btn-sm btn-primary" onclick="showAddPortEmailConfigModal()">
-                                        <i class="fas fa-plus"></i> Add Configuration
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-primary" onclick="refreshPortEmailConfigs()">
-                                        <i class="fas fa-sync-alt"></i> Refresh
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-striped">
-                                        <thead>
-                                            <tr>
-                                                <th>Port</th>
-                                                <th>Email Enabled</th>
-                                                <th>Recipients</th>
-                                                <th>Template</th>
-                                                <th>Script Failures</th>
-                                                <th>Email Failures</th>
-                                                <th>Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="portEmailConfigsTable">
-                                            <tr>
-                                                <td colspan="7" class="text-center">
-                                                    <i class="fas fa-spinner fa-spin"></i> Loading configurations...
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+        <!-- Port Alerts Tab -->
+        <div id="port-alerts" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Port Email Alert Configuration</h2>
                 </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Port</th>
+                            <th>Status</th>
+                            <th>Email Enabled</th>
+                            <th>Recipients</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="portAlertsTableBody">
+                        <!-- Port alerts will be loaded here -->
+                    </tbody>
+                </table>
             </div>
+        </div>
 
-            <!-- Test Email Tab -->
-            <div class="tab-pane fade" id="test" role="tabpanel">
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5 class="mb-0"><i class="fas fa-vial"></i> Test Email Configuration</h5>
-                            </div>
-                            <div class="card-body">
-                                <form id="testEmailForm">
-                                    <div class="mb-3">
-                                        <label for="testRecipients" class="form-label">Test Recipients (comma-separated)</label>
-                                        <input type="text" class="form-control" id="testRecipients" placeholder="admin@yourcompany.com, support@yourcompany.com" required>
-                                        <div class="form-text">Enter email addresses separated by commas</div>
-                                    </div>
-                                    <div class="d-flex gap-2">
-                                        <button type="button" class="btn btn-outline-primary" onclick="testSmtpConnection()">
-                                            <i class="fas fa-plug"></i> Test SMTP Connection
-                                        </button>
-                                        <button type="submit" class="btn btn-primary">
-                                            <i class="fas fa-paper-plane"></i> Send Test Email
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
+        <!-- Service Alerts Tab -->
+        <div id="service-alerts" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Service Email Alert Configuration</h2>
                 </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Service Name</th>
+                            <th>Email Enabled</th>
+                            <th>Recipients</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="serviceAlertsTableBody">
+                        <!-- Service alerts will be loaded here -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 
-    <!-- Add Template Modal -->
-    <div class="modal fade" id="addTemplateModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Add Email Template</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="addTemplateForm">
-                        <div class="mb-3">
-                            <label for="templateName" class="form-label">Template Name</label>
-                            <input type="text" class="form-control" id="templateName" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="templateSubject" class="form-label">Subject</label>
-                            <input type="text" class="form-control" id="templateSubject" required>
-                            <div class="form-text">Use variables: {port}, {status}, {failure_count}, {timestamp}, {server_name}</div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="templateBody" class="form-label">Email Body</label>
-                            <textarea class="form-control" id="templateBody" rows="10" required></textarea>
-                            <div class="form-text">Use variables: {port}, {status}, {failure_count}, {timestamp}, {server_name}, {message}</div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="saveTemplate()">Save Template</button>
-                </div>
+    <!-- Template Modal -->
+    <div id="templateModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="templateModalTitle">Add Email Template</h3>
+                <button class="modal-close" onclick="closeTemplateModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="templateForm">
+                    <div class="form-group">
+                        <label class="form-label" for="templateName">Template Name</label>
+                        <input type="text" id="templateName" class="form-input" placeholder="e.g., critical_alert">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="templateType">Template Type</label>
+                        <select id="templateType" class="form-select">
+                            <option value="port">Port Alert</option>
+                            <option value="service">Service Alert</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="templateSubject">Subject Template</label>
+                        <input type="text" id="templateSubject" class="form-input"
+                            placeholder="[WinSentry] {status} - Port {port}">
+                        <p class="form-text">Available variables: {status}, {port}, {service_name}, {server_name},
+                            {timestamp}</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="templateBody">Body Template</label>
+                        <textarea id="templateBody" class="form-input"
+                            placeholder="Alert Details:&#10;Status: {status}&#10;Port: {port}&#10;Time: {timestamp}"></textarea>
+                        <p class="form-text">Available variables: {status}, {port}, {service_name}, {message},
+                            {failure_count}, {severity}, {logs}</p>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeTemplateModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveTemplate()">Save Template</button>
             </div>
         </div>
     </div>
 
-    <!-- Port Email Config Modal -->
-    <div class="modal fade" id="portEmailConfigModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Configure Port Email Settings</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="portEmailConfigForm">
-                        <div class="mb-3" id="portSelectionDiv">
-                            <label for="configPort" class="form-label">Port</label>
-                            <select class="form-control" id="configPort" required>
-                                <option value="">Select a port...</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="emailEnabled">
-                                <label class="form-check-label" for="emailEnabled">
-                                    Enable email alerts for this port
-                                </label>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="emailRecipients" class="form-label">Recipients (comma-separated)</label>
-                            <input type="text" class="form-control" id="emailRecipients" placeholder="admin@company.com, support@company.com">
-                        </div>
-                        <div class="mb-3">
-                            <label for="emailTemplate" class="form-label">Email Template</label>
-                            <select class="form-control" id="emailTemplate">
-                                <option value="default">Default Template</option>
-                            </select>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="scriptFailures" class="form-label">PowerShell Script Failures</label>
-                                    <input type="number" class="form-control" id="scriptFailures" value="3" min="1" max="100">
-                                    <div class="form-text">Execute script after N failures</div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="emailFailures" class="form-label">Email Alert Failures</label>
-                                    <input type="number" class="form-control" id="emailFailures" value="5" min="1" max="100">
-                                    <div class="form-text">Send email after M failures</div>
-                                </div>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="savePortEmailConfig()">Save Configuration</button>
-                </div>
+    <!-- Port Alert Config Modal -->
+    <div id="portAlertModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Configure Port Alert</h3>
+                <button class="modal-close" onclick="closePortAlertModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="portAlertForm">
+                    <input type="hidden" id="portAlertPort">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="portAlertEnabled" class="form-checkbox">
+                            Enable Email Alerts
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="portAlertRecipients">Recipients</label>
+                        <input type="text" id="portAlertRecipients" class="form-input"
+                            placeholder="email1@example.com, email2@example.com">
+                        <p class="form-text">Comma-separated list of email addresses</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="portAlertTemplate">Email Template</label>
+                        <select id="portAlertTemplate" class="form-select">
+                            <option value="default">Default</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePortAlertModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="savePortAlert()">Save</button>
             </div>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Global variables
-        let currentTemplates = {};
-        let currentPortEmailConfigs = {};
+        // Tab switching
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active class from all tabs and content
+                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-        // Initialize page
-        document.addEventListener('DOMContentLoaded', function() {
-            loadSmtpConfig();
-            loadTemplates();
-            loadPortEmailConfigs();
-            populateTemplateDropdown();
+                // Add active class to clicked tab and corresponding content
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.tab).classList.add('active');
+            });
         });
 
-        // SMTP Configuration Functions
+        // Show alert
+        function showAlert(type, message) {
+            const container = document.getElementById('alertContainer');
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-warning';
+            container.innerHTML = `<div class="alert ${alertClass}">${message}</div>`;
+            setTimeout(() => container.innerHTML = '', 5000);
+        }
+
+        // API helper
+        async function apiCall(url, options = {}) {
+            try {
+                const response = await fetch(url, {
+                    headers: { 'Content-Type': 'application/json' },
+                    ...options
+                });
+                return await response.json();
+            } catch (error) {
+                console.error('API call failed:', error);
+                throw error;
+            }
+        }
+
+        // Load SMTP config
         async function loadSmtpConfig() {
             try {
-                const response = await fetch('/api/email/config');
-                const data = await response.json();
-                
-                if (data.success) {
-                    const config = data.smtp_config;
-                    document.getElementById('smtpServer').value = config.smtp_server || '';
-                    document.getElementById('smtpPort').value = config.smtp_port || 587;
-                    document.getElementById('smtpUsername').value = config.smtp_username || '';
-                    document.getElementById('smtpPassword').value = config.smtp_password || '';
-                    document.getElementById('fromEmail').value = config.from_email || '';
-                    document.getElementById('fromName').value = config.from_name || 'WinSentry Alert System';
-                    document.getElementById('useTls').checked = config.use_tls !== false;
+                const response = await apiCall('/api/email/config');
+                if (response.success && response.config) {
+                    document.getElementById('smtpServer').value = response.config.smtp_server || '';
+                    document.getElementById('smtpPort').value = response.config.smtp_port || 587;
+                    document.getElementById('smtpUsername').value = response.config.smtp_username || '';
+                    document.getElementById('smtpFromEmail').value = response.config.from_email || '';
+                    document.getElementById('smtpUseTLS').checked = response.config.use_tls !== false;
                 }
             } catch (error) {
-                showAlert('Error loading SMTP configuration: ' + error.message, 'danger');
+                console.error('Failed to load SMTP config:', error);
             }
         }
 
-        document.getElementById('smtpConfigForm').addEventListener('submit', async function(e) {
+        // Save SMTP config
+        document.getElementById('smtpForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
-            const config = {
-                smtp_server: document.getElementById('smtpServer').value,
-                smtp_port: parseInt(document.getElementById('smtpPort').value),
-                smtp_username: document.getElementById('smtpUsername').value,
-                smtp_password: document.getElementById('smtpPassword').value,
-                from_email: document.getElementById('fromEmail').value,
-                from_name: document.getElementById('fromName').value,
-                use_tls: document.getElementById('useTls').checked
-            };
-            
             try {
-                const response = await fetch('/api/email/config', {
+                const response = await apiCall('/api/email/config', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(config)
+                    body: JSON.stringify({
+                        smtp_server: document.getElementById('smtpServer').value,
+                        smtp_port: parseInt(document.getElementById('smtpPort').value),
+                        smtp_username: document.getElementById('smtpUsername').value,
+                        smtp_password: document.getElementById('smtpPassword').value,
+                        from_email: document.getElementById('smtpFromEmail').value,
+                        use_tls: document.getElementById('smtpUseTLS').checked
+                    })
                 });
-                
-                const data = await response.json();
-                showAlert(data.message, data.success ? 'success' : 'danger');
+                if (response.success) {
+                    showAlert('success', 'SMTP settings saved successfully');
+                } else {
+                    showAlert('error', response.error || 'Failed to save SMTP settings');
+                }
             } catch (error) {
-                showAlert('Error saving SMTP configuration: ' + error.message, 'danger');
+                showAlert('error', 'Failed to save SMTP settings');
             }
         });
 
-        async function testSmtpConnection() {
+        // Test SMTP connection
+        async function testSmtp() {
             try {
-                const response = await fetch('/api/email/test', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'connection' })
-                });
-                
-                const data = await response.json();
-                showAlert(data.message || data.error, data.success ? 'success' : 'danger');
+                showAlert('warning', 'Testing SMTP connection...');
+                const response = await apiCall('/api/email/test', { method: 'POST' });
+                if (response.success) {
+                    showAlert('success', 'SMTP connection test successful!');
+                } else {
+                    showAlert('error', response.error || 'SMTP connection test failed');
+                }
             } catch (error) {
-                showAlert('Error testing SMTP connection: ' + error.message, 'danger');
+                showAlert('error', 'Failed to test SMTP connection');
             }
         }
 
-        // Template Functions
+        // Load templates
         async function loadTemplates() {
             try {
-                const response = await fetch('/api/email/templates');
-                const data = await response.json();
-                
-                if (data.success) {
-                    currentTemplates = data.templates;
-                    displayTemplates();
-                }
-            } catch (error) {
-                showAlert('Error loading templates: ' + error.message, 'danger');
-            }
-        }
-
-        function displayTemplates() {
-            const tbody = document.getElementById('templatesTable');
-            tbody.innerHTML = '';
-            
-            Object.keys(currentTemplates).forEach(templateName => {
-                const template = currentTemplates[templateName];
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td><strong>${templateName}</strong></td>
-                    <td>${template.subject}</td>
-                    <td>
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-primary btn-sm" onclick="previewTemplate('${templateName}')">
-                                <i class="fas fa-eye"></i> Preview
-                            </button>
-                            <button class="btn btn-outline-danger btn-sm" onclick="deleteTemplate('${templateName}')">
-                                <i class="fas fa-trash"></i> Delete
-                            </button>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(row);
-            });
-            
-            // Update template dropdown
-            populateTemplateDropdown();
-        }
-
-        function populateTemplateDropdown() {
-            const dropdown = document.getElementById('emailTemplate');
-            dropdown.innerHTML = '';
-            
-            Object.keys(currentTemplates).forEach(templateName => {
-                const option = document.createElement('option');
-                option.value = templateName;
-                option.textContent = templateName;
-                dropdown.appendChild(option);
-            });
-        }
-
-        function showAddTemplateModal() {
-            document.getElementById('addTemplateForm').reset();
-            new bootstrap.Modal(document.getElementById('addTemplateModal')).show();
-        }
-
-        async function saveTemplate() {
-            const templateName = document.getElementById('templateName').value;
-            const subject = document.getElementById('templateSubject').value;
-            const body = document.getElementById('templateBody').value;
-            
-            try {
-                const response = await fetch('/api/email/templates', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ template_name: templateName, subject, body })
-                });
-                
-                const data = await response.json();
-                showAlert(data.message, data.success ? 'success' : 'danger');
-                
-                if (data.success) {
-                    bootstrap.Modal.getInstance(document.getElementById('addTemplateModal')).hide();
-                    loadTemplates();
-                }
-            } catch (error) {
-                showAlert('Error saving template: ' + error.message, 'danger');
-            }
-        }
-
-        function previewTemplate(templateName) {
-            const template = currentTemplates[templateName];
-            const preview = document.getElementById('templatePreview');
-            
-            const sampleData = {
-                port: 8080,
-                status: 'OFFLINE',
-                failure_count: 3,
-                timestamp: new Date().toLocaleString(),
-                server_name: 'Test Server',
-                message: 'Port has been offline for 3 consecutive checks'
-            };
-            
-            const subject = template.subject.replace(/\{(\w+)\}/g, (match, key) => sampleData[key] || match);
-            const body = template.body.replace(/\{(\w+)\}/g, (match, key) => sampleData[key] || match);
-            
-            preview.innerHTML = `
-                <h6><strong>Subject:</strong> ${subject}</h6>
-                <hr>
-                <h6><strong>Body:</strong></h6>
-                <pre style="white-space: pre-wrap; font-family: inherit;">${body}</pre>
-            `;
-        }
-
-        async function deleteTemplate(templateName) {
-            if (!confirm(`Delete template "${templateName}"?`)) return;
-            
-            try {
-                const response = await fetch('/api/email/templates', {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ template_name: templateName })
-                });
-                
-                const data = await response.json();
-                showAlert(data.message, data.success ? 'success' : 'danger');
-                
-                if (data.success) {
-                    loadTemplates();
-                }
-            } catch (error) {
-                showAlert('Error deleting template: ' + error.message, 'danger');
-            }
-        }
-
-        // Port Email Configuration Functions
-        async function loadPortEmailConfigs() {
-            try {
-                const response = await fetch('/api/email/port-config');
-                const data = await response.json();
-                
-                if (data.success) {
-                    currentPortEmailConfigs = data.configs;
-                    displayPortEmailConfigs();
+                const response = await apiCall('/api/email/templates');
+                const tbody = document.getElementById('templatesTableBody');
+                if (response.success && response.templates) {
+                    tbody.innerHTML = response.templates.map(t => `
+                        <tr>
+                            <td><strong>${t.name}</strong></td>
+                            <td><span class="badge badge-secondary">${t.type || 'General'}</span></td>
+                            <td>${t.subject || 'N/A'}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline" onclick="editTemplate('${t.name}')">Edit</button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteTemplate('${t.name}')">Delete</button>
+                            </td>
+                        </tr>
+                    `).join('');
                 } else {
-                    showAlert('Error loading port email configurations: ' + data.error, 'danger');
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #64748b;">No templates configured</td></tr>';
                 }
             } catch (error) {
-                showAlert('Error loading port email configurations: ' + error.message, 'danger');
+                console.error('Failed to load templates:', error);
             }
         }
 
-        function displayPortEmailConfigs() {
-            const tbody = document.getElementById('portEmailConfigsTable');
-            tbody.innerHTML = '';
-            
-            if (currentPortEmailConfigs.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No port email configurations found</td></tr>';
-                return;
-            }
-            
-            currentPortEmailConfigs.forEach(config => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${config.port} (${config.port_name || 'Unknown'})</td>
-                    <td>
-                        <span class="badge ${config.enabled ? 'bg-success' : 'bg-secondary'}">
-                            ${config.enabled ? 'Enabled' : 'Disabled'}
-                        </span>
-                    </td>
-                    <td>${config.recipients ? config.recipients.join(', ') : 'None'}</td>
-                    <td>${config.template || 'default'}</td>
-                    <td>${config.powershell_script_failures || 3}</td>
-                    <td>${config.email_alert_failures || 5}</td>
-                    <td>
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-primary btn-sm" onclick="editPortEmailConfig(${config.port})">
-                                <i class="fas fa-edit"></i> Edit
-                            </button>
-                            <button class="btn btn-outline-danger btn-sm" onclick="deletePortEmailConfig(${config.port})">
-                                <i class="fas fa-trash"></i> Delete
-                            </button>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(row);
-            });
+        // Show template modal
+        function showTemplateModal() {
+            document.getElementById('templateModalTitle').textContent = 'Add Email Template';
+            document.getElementById('templateForm').reset();
+            document.getElementById('templateModal').classList.add('active');
         }
 
-        function refreshPortEmailConfigs() {
-            loadPortEmailConfigs();
+        // Close template modal
+        function closeTemplateModal() {
+            document.getElementById('templateModal').classList.remove('active');
         }
 
-        function showAddPortEmailConfigModal() {
-            // Reset form
-            document.getElementById('portEmailConfigForm').reset();
-            
-            // Populate port dropdown
-            populatePortDropdown();
-            
-            // Show port selection
-            document.getElementById('portSelectionDiv').style.display = 'block';
-            
-            // Show modal
-            new bootstrap.Modal(document.getElementById('portEmailConfigModal')).show();
-        }
-
-        function populatePortDropdown() {
-            const dropdown = document.getElementById('configPort');
-            dropdown.innerHTML = '<option value="">Select a port...</option>';
-            
-            // Get monitored ports from the current configurations
-            if (currentPortEmailConfigs && currentPortEmailConfigs.length > 0) {
-                currentPortEmailConfigs.forEach(config => {
-                    const option = document.createElement('option');
-                    option.value = config.port;
-                    option.textContent = `${config.port} (${config.port_name || 'Unknown'})`;
-                    dropdown.appendChild(option);
-                });
-            }
-        }
-
-        function editPortEmailConfig(port) {
-            const config = currentPortEmailConfigs.find(c => c.port === port);
-            if (!config) return;
-            
-            // Hide port selection for editing
-            document.getElementById('portSelectionDiv').style.display = 'none';
-            
-            // Populate the modal
-            document.getElementById('configPort').value = port;
-            document.getElementById('emailEnabled').checked = config.enabled || false;
-            document.getElementById('emailRecipients').value = config.recipients ? config.recipients.join(', ') : '';
-            document.getElementById('emailTemplate').value = config.template || 'default';
-            document.getElementById('scriptFailures').value = config.powershell_script_failures || 3;
-            document.getElementById('emailFailures').value = config.email_alert_failures || 5;
-            
-            // Show the modal
-            new bootstrap.Modal(document.getElementById('portEmailConfigModal')).show();
-        }
-
-        async function savePortEmailConfig() {
-            const port = parseInt(document.getElementById('configPort').value);
-            const config = {
-                enabled: document.getElementById('emailEnabled').checked,
-                recipients: document.getElementById('emailRecipients').value.split(',').map(email => email.trim()).filter(email => email),
-                template: document.getElementById('emailTemplate').value,
-                powershell_script_failures: parseInt(document.getElementById('scriptFailures').value),
-                email_alert_failures: parseInt(document.getElementById('emailFailures').value)
-            };
-            
+        // Save template
+        async function saveTemplate() {
             try {
-                const response = await fetch('/api/email/port-config', {
+                const response = await apiCall('/api/email/templates', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ port, config })
+                    body: JSON.stringify({
+                        name: document.getElementById('templateName').value,
+                        type: document.getElementById('templateType').value,
+                        subject: document.getElementById('templateSubject').value,
+                        body: document.getElementById('templateBody').value
+                    })
                 });
-                
-                const data = await response.json();
-                showAlert(data.message, data.success ? 'success' : 'danger');
-                
-                if (data.success) {
-                    bootstrap.Modal.getInstance(document.getElementById('portEmailConfigModal')).hide();
-                    loadPortEmailConfigs();
+                if (response.success) {
+                    showAlert('success', 'Template saved successfully');
+                    closeTemplateModal();
+                    loadTemplates();
+                } else {
+                    showAlert('error', response.error || 'Failed to save template');
                 }
             } catch (error) {
-                showAlert('Error saving port email configuration: ' + error.message, 'danger');
+                showAlert('error', 'Failed to save template');
             }
         }
 
-        async function deletePortEmailConfig(port) {
-            if (!confirm(`Delete email configuration for port ${port}?`)) return;
-            
+        // Edit template
+        async function editTemplate(name) {
             try {
-                const response = await fetch('/api/email/port-config', {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ port })
-                });
-                
-                const data = await response.json();
-                showAlert(data.message, data.success ? 'success' : 'danger');
-                
-                if (data.success) {
-                    loadPortEmailConfigs();
+                const response = await apiCall(`/api/email/templates/${encodeURIComponent(name)}`);
+                if (response.success && response.template) {
+                    document.getElementById('templateModalTitle').textContent = 'Edit Email Template';
+                    document.getElementById('templateName').value = response.template.name;
+                    document.getElementById('templateType').value = response.template.type || 'port';
+                    document.getElementById('templateSubject').value = response.template.subject || '';
+                    document.getElementById('templateBody').value = response.template.body || '';
+                    document.getElementById('templateModal').classList.add('active');
                 }
             } catch (error) {
-                showAlert('Error deleting port email configuration: ' + error.message, 'danger');
+                showAlert('error', 'Failed to load template');
             }
         }
 
-        // Test Email Functions
-        document.getElementById('testEmailForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const recipients = document.getElementById('testRecipients').value.split(',').map(email => email.trim());
-            
+        // Delete template
+        async function deleteTemplate(name) {
+            if (!confirm(`Are you sure you want to delete the template "${name}"?`)) return;
             try {
-                const response = await fetch('/api/email/test', {
+                const response = await apiCall(`/api/email/templates/${encodeURIComponent(name)}`, {
+                    method: 'DELETE'
+                });
+                if (response.success) {
+                    showAlert('success', 'Template deleted successfully');
+                    loadTemplates();
+                } else {
+                    showAlert('error', response.error || 'Failed to delete template');
+                }
+            } catch (error) {
+                showAlert('error', 'Failed to delete template');
+            }
+        }
+
+        // Load port alerts
+        async function loadPortAlerts() {
+            try {
+                const response = await apiCall('/api/port-monitor/config');
+                const tbody = document.getElementById('portAlertsTableBody');
+                if (response.success && response.configs) {
+                    tbody.innerHTML = response.configs.map(c => `
+                        <tr>
+                            <td><strong>${c.port}</strong></td>
+                            <td><span class="badge ${c.enabled ? 'badge-success' : 'badge-danger'}">${c.enabled ? 'Enabled' : 'Disabled'}</span></td>
+                            <td><span class="badge ${c.email_recipients ? 'badge-success' : 'badge-secondary'}">${c.email_recipients ? 'Yes' : 'No'}</span></td>
+                            <td>${c.email_recipients || 'Not configured'}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline" onclick="configurePortAlert(${c.port})">Configure</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b;">No ports configured</td></tr>';
+                }
+            } catch (error) {
+                console.error('Failed to load port alerts:', error);
+            }
+        }
+
+        // Configure port alert
+        function configurePortAlert(port) {
+            document.getElementById('portAlertPort').value = port;
+            document.getElementById('portAlertModal').classList.add('active');
+        }
+
+        // Close port alert modal
+        function closePortAlertModal() {
+            document.getElementById('portAlertModal').classList.remove('active');
+        }
+
+        // Save port alert
+        async function savePortAlert() {
+            try {
+                const port = document.getElementById('portAlertPort').value;
+                const response = await apiCall(`/api/port-monitor/email-config/${port}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'email', recipients })
+                    body: JSON.stringify({
+                        enabled: document.getElementById('portAlertEnabled').checked,
+                        recipients: document.getElementById('portAlertRecipients').value,
+                        template: document.getElementById('portAlertTemplate').value
+                    })
                 });
-                
-                const data = await response.json();
-                showAlert(data.message, data.success ? 'success' : 'danger');
+                if (response.success) {
+                    showAlert('success', 'Port alert configuration saved');
+                    closePortAlertModal();
+                    loadPortAlerts();
+                } else {
+                    showAlert('error', response.error || 'Failed to save configuration');
+                }
             } catch (error) {
-                showAlert('Error sending test email: ' + error.message, 'danger');
+                showAlert('error', 'Failed to save configuration');
             }
+        }
+
+        // Load service alerts
+        async function loadServiceAlerts() {
+            try {
+                const response = await apiCall('/api/service-monitor/config');
+                const tbody = document.getElementById('serviceAlertsTableBody');
+                if (response.success && response.services) {
+                    tbody.innerHTML = response.services.map(s => `
+                        <tr>
+                            <td><strong>${s.service_name}</strong></td>
+                            <td><span class="badge ${s.email_recipients ? 'badge-success' : 'badge-secondary'}">${s.email_recipients ? 'Yes' : 'No'}</span></td>
+                            <td>${s.email_recipients || 'Not configured'}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline" onclick="configureServiceAlert('${s.service_name}')">Configure</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #64748b;">No services configured</td></tr>';
+                }
+            } catch (error) {
+                console.error('Failed to load service alerts:', error);
+            }
+        }
+
+        // Configure service alert
+        function configureServiceAlert(serviceName) {
+            // Similar to port alert, would open a modal
+            showAlert('warning', 'Service alert configuration coming soon');
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSmtpConfig();
+            loadTemplates();
+            loadPortAlerts();
+            loadServiceAlerts();
         });
-
-        // Utility Functions
-        function showAlert(message, type) {
-            const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-            alertDiv.innerHTML = `
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            
-            const container = document.querySelector('.container');
-            container.insertBefore(alertDiv, container.firstChild);
-            
-            setTimeout(() => {
-                if (alertDiv.parentNode) {
-                    alertDiv.remove();
-                }
-            }, 5000);
-        }
     </script>
 </body>
+
 </html>
